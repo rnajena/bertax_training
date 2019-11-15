@@ -1,7 +1,7 @@
 import argparse
 import model
 from generate_data import DataSplit
-from process_inputs import kmers2index, kmers2onehot
+from process_inputs import words2index, words2onehot
 from tensorflow.keras.callbacks import EarlyStopping
 import logging
 from itertools import product
@@ -66,14 +66,18 @@ if __name__ == '__main__':
             vars(args)[key] = val[0]
     # store raw arguments (no functions) for json serialization
     args_repr = dict(vars(args))
-    args.enc_method = {'kmers2index': kmers2index, 'kmers2onehot':
-                       kmers2onehot}[args.enc_method]
+    args.enc_method = {'words2index': words2index, 'words2onehot':
+                       words2onehot}[args.enc_method]
     logging.basicConfig(format='%(asctime)s - [%(levelname)s] %(message)s')
+    # validate arguments
     if (args.type == 'tcn'):
         import tensorflow as tf
         if (not tf.__version__.startswith('1.')):
             raise Exception('You seem to be using tensorflow > version 1. '
                             'TCN models only work with tensorflow<2')
+    if (args.enc_stride > args.enc_k):
+        logging.warning(f'The k-mer stride (f{args.enc_stride}) is larger '
+                        f'than k ({args.enc_k}). Information will be lost!')
     if (args.verbose):
         logging.getLogger().setLevel(logging.DEBUG)
         print(args_repr)
@@ -88,6 +92,8 @@ if __name__ == '__main__':
         rev_comp_mode=args.rev_comp_mode,
         enc_method=args.enc_method,
         enc_dimension=args.enc_dimension,
+        enc_k=args.enc_k,
+        enc_stride=args.enc_stride,
         max_seq_len=args.max_seq_len,
         cache=args.cache_batches,
         cache_seq_limit=args.cache_seq_limit)
@@ -137,4 +143,4 @@ if __name__ == '__main__':
         m.train(train_g, val_g, epochs=args.epochs, callbacks=callbacks)
         logging.info('evaluating')
         m.eval(test_g, args.class_report)
-        m.write_to_file(m.name + '.json', args_repr)
+        m.write_to_file(m.name + '.json', args_repr, settings)

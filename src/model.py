@@ -1,24 +1,29 @@
 import numpy as np
-import tensorflow as tf
-if (tf.__version__.startswith('1.')):
-    import keras
-else:
-    import tensorflow.keras as keras
-from keras.models import Model
-from keras.layers import Conv1D, Dropout, MaxPooling1D, Input
-from keras.layers import Embedding, Dense, Flatten
-from keras.layers import concatenate, LSTM, Bidirectional, GRU
-from keras.utils import plot_model, Sequence
-from keras import optimizers
-import keras.callbacks as keras_cbs
 from dataclasses import dataclass
 from generate_data import DataSplit
-from process_inputs import kmers2index, kmers2onehot
+from process_inputs import words2index, words2onehot
 from logging import info, warning
 from datetime import datetime
 import json
 from glob import glob
 import re
+import tensorflow as tf
+if (tf.__version__.startswith('1.')):
+    from keras.models import Model
+    from keras.layers import Conv1D, Dropout, MaxPooling1D, Input
+    from keras.layers import Embedding, Dense, Flatten
+    from keras.layers import concatenate, LSTM, Bidirectional, GRU
+    from keras.utils import plot_model, Sequence
+    from keras import optimizers
+    import keras.callbacks as keras_cbs
+else:
+    from tensorflow.keras.models import Model
+    from tensorflow.keras.layers import Conv1D, Dropout, MaxPooling1D, Input
+    from tensorflow.keras.layers import Embedding, Dense, Flatten
+    from tensorflow.keras.layers import concatenate, LSTM, Bidirectional, GRU
+    from tensorflow.keras.utils import plot_model, Sequence
+    from tensorflow.keras import optimizers
+    import tensorflow.keras.callbacks as keras_cbs
 
 
 def model_name(model=None, unique=True):
@@ -43,7 +48,7 @@ def model_name(model=None, unique=True):
 PARAMS = {'nns': {'emb_layer_dim': (int, 1),
                   'dropout_rate': (float, 0.01),
                   'max_pool': (bool, True, 'cnn'),
-                  'summary': (bool, True),
+                  'summary': (bool, False),
                   'plot': (bool, False),
                   # cnn
                   'nr_filters': (int, 16, 'cnn,tcn'),
@@ -67,6 +72,8 @@ PARAMS = {'nns': {'emb_layer_dim': (int, 1),
                    'rev_comp': (bool, False), 'rev_comp_mode': (
                        str, 'append', None, '', ['append', 'random']),
                    'enc_dimension': (int, 65),
+                   'enc_k': (int, 3),
+                   'enc_stride': (int, 3),
                    'cache_batches': (bool, True),
                    'cache_seq_limit': (int, None),
                    'root_fa_dir':
@@ -74,8 +81,8 @@ PARAMS = {'nns': {'emb_layer_dim': (int, 1),
                    'file_names_cache':
                    (str,
                     '/home/lo63tor/master/sequences/dna_sequences/files.json'),
-                   'enc_method': (str, 'kmers2index', None, '',
-                                  ['kmers2index', 'kmers2onehot']),
+                   'enc_method': (str, 'words2index', None, '',
+                                  ['words2index', 'words2onehot']),
                    'max_seq_len': (int, 10_000), },
           'run': {'epochs': (int, 100), 'test_split': (float, 0.2),
                   'model_name': (str, model_name()),
@@ -256,7 +263,7 @@ class DCModel:
                        'classification_report': c_report}
         return acc
 
-    def write_to_file(self, filename, params={}):
+    def write_to_file(self, filename, params={}, specific_params={}):
         results = {}
         if (self.trained is not None):
             results['history'] = {key: [float(v) for v in val] for key, val in
@@ -267,6 +274,8 @@ class DCModel:
                                        for key, val in self.tested.items()}
         if (len(params) != 0):
             results['params'] = params
+        if (len(specific_params) != 0):
+            results['specific_params'] = specific_params
         if (len(results) == 0):
             warning('model doesn\'t seem to have been trained, '
                     'not writing to file')
@@ -279,7 +288,7 @@ class DCModel:
 def cnn(epochs=200, early_stopping=True,
         classes=['Viruses', 'Archaea', 'Bacteria', 'Eukaryota'],
         batch_size=5000, max_seq_len=10_000, nr_seqs=1000, enc_dimension=65,
-        emb_layer_dim=1, enc_method=kmers2index, model_settings={}):
+        emb_layer_dim=1, enc_method=words2index, model_settings={}):
     m = DCModel(classes, max_seq_len=max_seq_len, enc_dimension=enc_dimension)
     m.generate_cnn_model(emb_layer_dim=emb_layer_dim, **model_settings)
     split = DataSplit('../../sequences/dna_sequences/', nr_seqs,
@@ -301,7 +310,7 @@ def cnn(epochs=200, early_stopping=True,
 def blstm(epochs=50, early_stopping=True,
           classes=['Viruses', 'Archaea', 'Bacteria', 'Eukaryota'],
           batch_size=250, max_seq_len=10_000, nr_seqs=25_000, enc_dimension=65,
-          emb_layer_dim=1, enc_method=kmers2index, model_settings={}):
+          emb_layer_dim=1, enc_method=words2index, model_settings={}):
     m = DCModel(classes, max_seq_len=max_seq_len, enc_dimension=enc_dimension)
     m.generate_cnn_model(emb_layer_dim=emb_layer_dim, **model_settings)
     split = DataSplit('../../sequences/dna_sequences/', nr_seqs,
@@ -320,7 +329,7 @@ def blstm(epochs=50, early_stopping=True,
 
 def onehot_cnn():
     cnn(epochs=100, batch_size=1000, enc_dimension=64, emb_layer_dim=None,
-        enc_method=kmers2onehot)
+        enc_method=words2onehot)
 
 
 def emb_cnn():
@@ -328,25 +337,27 @@ def emb_cnn():
         classes=['Viruses', 'Archaea'],
         nr_seqs=100_000, batch_size=5_000,
         enc_dimension=65, emb_layer_dim=1,
-        enc_method=kmers2index)
+        enc_method=words2index)
 
 
 def grid_search():
     classes = ['Viruses', 'Archaea', 'Bacteria', 'Eukaryota']
-    nr_seqs = 100_000
+    nr_seqs = 10_000
     batch_size = 500
-    enc_method_str = 'kmers2index'
-    enc_method = {'kmers2index': kmers2index, 'kmers2onehot':
-                  kmers2onehot}[enc_method_str]
-    enc_dimension = 65
+    enc_method_str = 'words2index'
+    enc_method = {'words2index': words2index, 'words2onehot':
+                  words2onehot}[enc_method_str]
+    enc_dimension = 5
     emb_layer_dim = 1
     max_seq_len = 10_000
-    epochs = 100
+    epochs = 20
     split = DataSplit('../../sequences/dna_sequences/', nr_seqs,
                       classes,
                       '../../sequences/dna_sequences/files.json')
-    train_g, val_g, test_g = split.to_generators(batch_size, enc_method,
-                                                 enc_dimension,
+    train_g, val_g, test_g = split.to_generators(batch_size,
+                                                 enc_method=enc_method,
+                                                 enc_dimension=enc_dimension,
+                                                 enc_k=1, enc_stride=1,
                                                  max_seq_len=max_seq_len,
                                                  cache=True)
     # early stopping adapted to low batch_size/high #batches
@@ -358,7 +369,7 @@ def grid_search():
                                              restore_best_weights=True)
     callbacks = [early_stopping]
     defaults = {'nr_filters': 8, 'kernel_size': 4,
-                'nr_layers': 16, 'neurons_full': 64,
+                'nr_layers': 8, 'neurons_full': 64,
                 'dropout_rate': 0.01, 'emb_layer_dim': 1}
     grid = {'kernel_size': [12],
             'nr_layers': [32], 'emb_layer_dim': [2, 4]}
@@ -371,7 +382,7 @@ def grid_search():
             print(model_settings)
             m = DCModel(classes, max_seq_len=max_seq_len,
                         enc_dimension=enc_dimension)
-            m.name = f'grid2_{key}_{value}'
+            m.name = f'grid_cnn_singlenuleotide_{key}_{value}'
             m.generate_cnn_model(**model_settings)
             m.train(train_g, val_g, epochs=epochs, callbacks=callbacks)
             params = {}
@@ -413,5 +424,5 @@ if __name__ == '__main__':
     # split = DataSplit('../../sequences/dna_sequences/', 10,
     #                   classes,
     #                   '../../sequences/dna_sequences/files.json')
-    # train_g, val_g, test_g = split.to_generators(batch_size, kmers2index, 65,
+    # train_g, val_g, test_g = split.to_generators(batch_size, words2index, 65,
     #                                              max_seq_len=max_seq_len)

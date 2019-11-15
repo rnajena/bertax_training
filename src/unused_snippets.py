@@ -64,7 +64,7 @@ class DataGenerator:
             self.headers[c] = headers_c
 
     def encode_sequence(seq, max_seq_len, pad=True):
-        seq = kmers2onehot(seq2kmers(seq))
+        seq = words2onehot(seq2kmers(seq))
         if (pad):
             seq = pad_sequence(seq, max_seq_len, pos='end', cut=True)
         return seq
@@ -77,7 +77,7 @@ class DataGenerator:
         self.max_seq_len = 100
         for i in range(self.nr_seqs):
             for c in self.classes:
-                self.seqs[c][i] = kmers2onehot(seq2kmers(self.seqs[c][i]))
+                self.seqs[c][i] = words2onehot(seq2kmers(self.seqs[c][i]))
                 if (len(self.seqs[c][i]) > self.max_seq_len):
                     self.max_seq_len = len(self.seqs[c][i])
         # (optional) padding, now that max seq len is known

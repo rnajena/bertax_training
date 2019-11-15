@@ -1,5 +1,5 @@
 from generate_data import DataSplit
-from process_inputs import kmers2index, kmers2onehot
+from process_inputs import words2index, words2onehot
 from keras.layers import Dense, Embedding
 from keras.models import Input, Model
 from keras import callbacks as keras_cbs
@@ -14,9 +14,9 @@ tcn_options = {'kernel_size': 6,
 classes = ['Viruses', 'Archaea', 'Bacteria', 'Eukaryota']
 nr_seqs = 10_000
 batch_size = 500
-enc_method_str = 'kmers2index'
-enc_method = {'kmers2index': kmers2index, 'kmers2onehot':
-              kmers2onehot}[enc_method_str]
+enc_method_str = 'words2index'
+enc_method = {'words2index': words2index, 'words2onehot':
+              words2onehot}[enc_method_str]
 enc_dimension = 65
 emb_layer_dim = 1
 max_seq_len = 1000

@@ -1,7 +1,7 @@
 from os import scandir
 import os.path
 from random import sample, shuffle, choice
-from process_inputs import kmers2onehot, kmers2index
+from process_inputs import words2onehot, words2index, seq2kmers, seq2nucleotides
 from process_inputs import encode_sequence, read_seq, get_class_vectors
 import numpy as np
 from dataclasses import dataclass
@@ -144,12 +144,14 @@ class DataSplit:
                 self.labels[data_range[0]: data_range[1] + 1])
 
     def to_generators(self, batch_size, rev_comp=False, rev_comp_mode='append',
-                      enc_method=kmers2onehot, enc_dimension=64,
+                      enc_method=words2onehot, enc_dimension=64,
+                      enc_k=3, enc_stride=3,
                       max_seq_len=10_000, force_max_len=True,
                       cache=False, cache_seq_limit=None) -> tuple:
         kwargs = {'classes': self.classes, 'batch_size': batch_size,
                   'rev_comp': rev_comp, 'rev_comp_mode': rev_comp_mode,
                   'enc_method': enc_method, 'enc_dimension': enc_dimension,
+                  'enc_k': enc_k, 'enc_stride': enc_stride,
                   'max_seq_len': max_seq_len, 'force_max_len': force_max_len,
                   'cache': cache, 'cache_seq_limit': cache_seq_limit}
         return (BatchGenerator(*self.get_train_files(), **kwargs),
@@ -165,8 +167,10 @@ class BatchGenerator(Sequence):
     batch_size: int
     rev_comp: bool = False
     rev_comp_mode: str = 'append'
-    enc_method: Callable[[str], list] = kmers2onehot
+    enc_method: Callable[[str], list] = words2onehot
     enc_dimension: int = 64
+    enc_k: int = 3
+    enc_stride: int = 3
     max_seq_len: int = 10_000
     force_max_len: bool = True
     cache: bool = False         # cache batches
@@ -193,8 +197,11 @@ class BatchGenerator(Sequence):
                                 'not supported')
         return encode_sequence(
             raw_seq, self.max_seq_len, pad=True,
-            method=self.enc_method, handle_nonalph='special'
-            if self.enc_method == kmers2index else 'split')
+            method=self.enc_method,
+            k=self.enc_k,
+            stride=self.enc_stride,
+            handle_nonalph='special'
+            if self.enc_method == words2index else 'split')
 
     def __len__(self):
         return np.ceil(len(self.file_names) /
