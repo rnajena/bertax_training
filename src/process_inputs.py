@@ -142,6 +142,21 @@ def words2onehot(word_seq, handle_nonalph='split'):
             words2index(word_seq, handle_nonalph)]
 
 
+def words2vec(word_seq, w2vfile):
+    if (words2vec.w2v is None):
+        from gensim.models import Word2Vec
+        words2vec.w2v = Word2Vec.load(w2vfile)
+    seq_enc = []
+    for word in word_seq:
+        if (word not in words2vec.w2v.wv):
+            special_vector = [0 for _ in range(
+                words2vec.w2v.wv.vector_size)]
+            seq_enc.append(special_vector)
+        else:
+            seq_enc.append(words2vec.w2v.wv[word])
+    return seq_enc
+
+
 def words2base64(word_seq):
     if 'b64' not in globals():
         gen_b64()
@@ -210,22 +225,29 @@ def encode_sequence(seq, max_seq_len, pad=True, method=words2onehot,
     """
     seq = method(seq2kmers(seq, k, stride), **kwargs)
     if (pad):
-        method_str = 'onehot' if method == words2onehot else 'index'
-        seq = pad_sequence(seq, max_seq_len, method=method_str, k=k,
-                           pos='end', cut=True)
-        return seq
+        seq = pad_sequence(seq, max_seq_len, k=k, pos='end', cut=True)
+    return seq
 
 
-def pad_sequence(seq, max_seq_len, method='onehot',
-                 k=3, pos='end', cut=True):
+def pad_sequence(seq, max_seq_len, k=3, pos='end', cut=True):
+    """pads sequence (with length > 0) to length `max_seq_len`
+
+    the padding element will be:
+    - 0 vector with shape like first sequence element
+    - `get_special_index(k)` if the sequence consists of scalars
+
+    examples:
+    >>> pad_sequence([1, 2, 3, 1], 5, k=1)
+    [1, 2, 3, 1, 4]
+    >>> pad_sequence([[0, 1], [1, 0], [0, 1]], 5)
+    [[0, 1], [1, 0], [0, 1], [0, 0], [0, 0]]
+    """
     if (cut and len(seq) > max_seq_len):
         return seq[:max_seq_len]
-    if (method == 'onehot'):
+    if (hasattr(seq[0], '__len__')):
         pad_el = [0 for i in range(len(seq[0]))]
-    elif (method == 'index'):
-        pad_el = get_special_index(k)
     else:
-        raise Exception('not implemented yet')
+        pad_el = get_special_index(k)
     if (pos == 'balanced'):
         padded = (floor((max_seq_len - len(seq))/2) * [pad_el]
                   + seq + ceil((max_seq_len - len(seq))/2) * [pad_el])

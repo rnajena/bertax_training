@@ -1,7 +1,7 @@
 import argparse
 import model
 from generate_data import DataSplit
-from process_inputs import words2index, words2onehot
+from process_inputs import words2index, words2onehot, words2vec
 from tensorflow.keras.callbacks import EarlyStopping
 import logging
 from itertools import product
@@ -21,7 +21,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(
         formatter_class=argparse.MetavarTypeHelpFormatter,
         description='runs models')
-    parser.add_argument('type', choices=['cnn', 'lstm', 'tcn'],
+    parser.add_argument('type', choices=['cnn', 'lstm', 'tcn', 'ff'],
                         type=str,
                         help='(implemented) type of model to run')
     parser.add_argument('--verbose', '-v', action='store_true',
@@ -54,8 +54,6 @@ if __name__ == '__main__':
             g.add_argument(f'--{name}', type=a_type, default=a_default,
                            help=a_help, choices=a_choices, nargs=a_nargs)
     args = parser.parse_args()
-    from pprint import pprint
-    pprint(args)
     for key, val in vars(args).items():
         # TODO: dont transform params that are intended to be lists
         # for group in model.PARAMS:
@@ -67,7 +65,7 @@ if __name__ == '__main__':
     # store raw arguments (no functions) for json serialization
     args_repr = dict(vars(args))
     args.enc_method = {'words2index': words2index, 'words2onehot':
-                       words2onehot}[args.enc_method]
+                       words2onehot, 'words2vec': words2vec}[args.enc_method]
     logging.basicConfig(format='%(asctime)s - [%(levelname)s] %(message)s')
     # validate arguments
     if (args.type == 'tcn'):
@@ -78,6 +76,12 @@ if __name__ == '__main__':
     if (args.enc_stride > args.enc_k):
         logging.warning(f'The k-mer stride (f{args.enc_stride}) is larger '
                         f'than k ({args.enc_k}). Information will be lost!')
+    if (args.enc_method == words2vec):
+        if (args.w2vfile is None):
+            raise Exception(
+                'When using the `words2vec` encoding method a words2vec'
+                '(gensim) model filename has to be provided')
+        words2vec.w2v = None
     if (args.verbose):
         logging.getLogger().setLevel(logging.DEBUG)
         print(args_repr)
@@ -96,7 +100,8 @@ if __name__ == '__main__':
         enc_stride=args.enc_stride,
         max_seq_len=args.max_seq_len,
         cache=args.cache_batches,
-        cache_seq_limit=args.cache_seq_limit)
+        cache_seq_limit=args.cache_seq_limit,
+        w2vfile=args.w2vfile)
     callbacks = []
     if (args.early_stopping):
         logging.info('enabling early splitting')
@@ -105,8 +110,9 @@ if __name__ == '__main__':
             restore_best_weights=args.early_stopping_restore_weights)
         callbacks.append(early_stopping)
     m = model.DCModel(
-            classes=args.classes, max_seq_len=args.max_seq_len,
-            enc_dimension=args.enc_dimension, name=args.model_name)
+        classes=args.classes, max_seq_len=args.max_seq_len,
+        enc_dimension=args.enc_dimension, name=args.model_name,
+        summary=args.summary, plot=args.plot)
     # model-specific settings
     model_settings = {}
     for key, spec in model.PARAMS['nns'].items():
@@ -122,7 +128,8 @@ if __name__ == '__main__':
     logging.info(f'creating model architecture: f{args.type}')
     gen_model_fn = {'cnn': m.generate_cnn_model,
                     'lstm': m.generate_lstm_model,
-                    'tcn': m.generate_tcn_model}[args.type]
+                    'tcn': m.generate_tcn_model,
+                    'ff': m.generate_ff_model}[args.type]
     if (len(combinations) > 1):
         logging.info('some parameters have multiple values, '
                      'all combinations will be run')
@@ -137,7 +144,8 @@ if __name__ == '__main__':
             settings['dilations'] = [2 ** i for i in range(
                 settings['last_dilation_2exp'])]
             del settings['last_dilation_2exp']
-        print(f'model: {m.name}, settings: {settings}')
+        print(f'configuration {i}/{len(combinations)}\tmodel name: {m.name}, '
+              f'settings: {settings}')
         gen_model_fn(**settings)
         logging.info('training')
         m.train(train_g, val_g, epochs=args.epochs, callbacks=callbacks)

@@ -1,7 +1,8 @@
 from os import scandir
 import os.path
 from random import sample, shuffle, choice
-from process_inputs import words2onehot, words2index, seq2kmers, seq2nucleotides
+from process_inputs import words2onehot, words2index, words2vec, seq2kmers
+from process_inputs import seq2nucleotides
 from process_inputs import encode_sequence, read_seq, get_class_vectors
 import numpy as np
 from dataclasses import dataclass
@@ -147,13 +148,14 @@ class DataSplit:
                       enc_method=words2onehot, enc_dimension=64,
                       enc_k=3, enc_stride=3,
                       max_seq_len=10_000, force_max_len=True,
-                      cache=False, cache_seq_limit=None) -> tuple:
+                      cache=False, cache_seq_limit=None, w2vfile=None) -> tuple:
         kwargs = {'classes': self.classes, 'batch_size': batch_size,
                   'rev_comp': rev_comp, 'rev_comp_mode': rev_comp_mode,
                   'enc_method': enc_method, 'enc_dimension': enc_dimension,
                   'enc_k': enc_k, 'enc_stride': enc_stride,
                   'max_seq_len': max_seq_len, 'force_max_len': force_max_len,
-                  'cache': cache, 'cache_seq_limit': cache_seq_limit}
+                  'cache': cache, 'cache_seq_limit': cache_seq_limit,
+                  'w2vfile': w2vfile}
         return (BatchGenerator(*self.get_train_files(), **kwargs),
                 BatchGenerator(*self.get_val_files(), **kwargs),
                 BatchGenerator(*self.get_test_files(), **kwargs))
@@ -175,6 +177,7 @@ class BatchGenerator(Sequence):
     force_max_len: bool = True
     cache: bool = False         # cache batches
     cache_seq_limit: Optional[int] = None  # how many sequences to cache
+    w2vfile: Optional[str] = None
 
     def __post_init__(self):
         if (not self.force_max_len):
@@ -195,13 +198,19 @@ class BatchGenerator(Sequence):
             else:
                 raise Exception(f'rev_comp_mode {self.rev_comp_mode} '
                                 'not supported')
+        method_kwargs = {}
+        if (self.enc_method == words2index):
+            method_kwargs['handle_nonalph'] = 'special'
+        elif (self.enc_method == words2onehot):
+            method_kwargs['handle_nonalph'] = 'split'
+        elif (self.enc_method == words2vec):
+            method_kwargs['w2vfile'] = self.w2vfile
         return encode_sequence(
             raw_seq, self.max_seq_len, pad=True,
             method=self.enc_method,
             k=self.enc_k,
             stride=self.enc_stride,
-            handle_nonalph='special'
-            if self.enc_method == words2index else 'split')
+            **method_kwargs)
 
     def __len__(self):
         return np.ceil(len(self.file_names) /

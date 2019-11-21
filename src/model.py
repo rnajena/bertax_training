@@ -1,7 +1,8 @@
 import numpy as np
 from dataclasses import dataclass
+from typing import Optional
 from generate_data import DataSplit
-from process_inputs import words2index, words2onehot
+from process_inputs import words2index, words2onehot, words2vec
 from logging import info, warning
 from datetime import datetime
 import json
@@ -10,7 +11,7 @@ import re
 import tensorflow as tf
 if (tf.__version__.startswith('1.')):
     from keras.models import Model
-    from keras.layers import Conv1D, Dropout, MaxPooling1D, Input
+    from keras.layers import Conv1D, Conv2D, Dropout, MaxPooling1D, Input
     from keras.layers import Embedding, Dense, Flatten
     from keras.layers import concatenate, LSTM, Bidirectional, GRU
     from keras.utils import plot_model, Sequence
@@ -18,7 +19,7 @@ if (tf.__version__.startswith('1.')):
     import keras.callbacks as keras_cbs
 else:
     from tensorflow.keras.models import Model
-    from tensorflow.keras.layers import Conv1D, Dropout, MaxPooling1D, Input
+    from tensorflow.keras.layers import Conv1D, Conv2D, Dropout, MaxPooling1D, Input
     from tensorflow.keras.layers import Embedding, Dense, Flatten
     from tensorflow.keras.layers import concatenate, LSTM, Bidirectional, GRU
     from tensorflow.keras.utils import plot_model, Sequence
@@ -48,8 +49,6 @@ def model_name(model=None, unique=True):
 PARAMS = {'nns': {'emb_layer_dim': (int, 1),
                   'dropout_rate': (float, 0.01),
                   'max_pool': (bool, True, 'cnn'),
-                  'summary': (bool, False),
-                  'plot': (bool, False),
                   # cnn
                   'nr_filters': (int, 16, 'cnn,tcn'),
                   'kernel_size': (int, 4, 'cnn,tcn'),
@@ -82,7 +81,9 @@ PARAMS = {'nns': {'emb_layer_dim': (int, 1),
                    (str,
                     '/home/lo63tor/master/sequences/dna_sequences/files.json'),
                    'enc_method': (str, 'words2index', None, '',
-                                  ['words2index', 'words2onehot']),
+                                  ['words2index', 'words2onehot', 'words2vec']),
+                   'w2vfile': (str, None, None, 'filename of a stored word2vec'
+                               '(gensim) model'),
                    'max_seq_len': (int, 10_000), },
           'run': {'epochs': (int, 100), 'test_split': (float, 0.2),
                   'model_name': (str, model_name()),
@@ -92,7 +93,10 @@ PARAMS = {'nns': {'emb_layer_dim': (int, 1),
                   'early_stopping_md': (float, 0.01, None, 'min_delta'),
                   'early_stopping_p': (int, 5, None, 'patience'),
                   'early_stopping_restore_weights':
-                  (bool, True, None, 'restore best weights')}, }
+                  (bool, True, None, 'restore best weights'),
+                  'summary': (bool, False),
+                  'plot': (bool, False)}
+}
 
 
 @dataclass
@@ -105,6 +109,8 @@ class DCModel:
     max_seq_len: int = 100
     enc_dimension: int = 64
     name: str = model_name()
+    summary: bool = False
+    plot: bool = False
 
     def __post_init__(self):
         self.trained = None
@@ -113,19 +119,33 @@ class DCModel:
     # functions for building models with various architectures.
     # set the `model` instance variable
 
-    def generate_cnn_model(self, emb_layer_dim=None, nr_filters=8,
-                           kernel_size=16, nr_layers=2, neurons_full=32,
-                           conv_strides=1, dropout_rate=0.3, max_pool=True,
-                           summary=True, plot=False):
-        info('generating model')
+    def _model_inputs(self, emb_layer_dim=None):
+        if (emb_layer_dim == 0):
+            emb_layer_dim = None
         input_shape = ((self.max_seq_len, self.enc_dimension)
                        if emb_layer_dim is None else (self.max_seq_len,))
-        inputs = Input(shape=input_shape)
-        if (emb_layer_dim is not None):
-            emb = Embedding(self.enc_dimension, emb_layer_dim)(inputs)
-            inputs_to_connect = emb
-        else:
-            inputs_to_connect = inputs
+        inputs = Input(shape=input_shape, name='input')
+        if (emb_layer_dim is None):
+            return inputs, inputs
+        emb = Embedding(self.enc_dimension, emb_layer_dim,
+                        name='embedding')(inputs)
+        return inputs, emb
+
+    def _model_outputs(self, last_layer):
+        return Dense(len(self.classes), activation='softmax',
+                     name='classification')(last_layer)
+
+    def _model_visualization(self):
+        if (self.summary):
+            self.model.summary()
+        if (self.plot):
+            plot_model(self.model, 'model.png')
+
+    def generate_cnn_model(self, emb_layer_dim=None, nr_filters=8,
+                           kernel_size=16, nr_layers=2, neurons_full=32,
+                           conv_strides=1, dropout_rate=0.3, max_pool=True):
+        info('generating model')
+        inputs, emb = self._model_inputs(emb_layer_dim)
         stack = []
         for i in range(nr_layers):
             if type(nr_filters) == list:
@@ -134,7 +154,7 @@ class DCModel:
                 kernel_size = kernel_size[i]
             conv = Conv1D(filters=nr_filters, kernel_size=kernel_size,
                           strides=conv_strides, activation='relu')(
-                              inputs_to_connect)
+                              emb)
             if (dropout_rate is not None and dropout_rate > 0):
                 dropout = Dropout(dropout_rate)(conv)
             else:
@@ -151,25 +171,43 @@ class DCModel:
         #                activation='relu')(stack)
         # flatten = Flatten()(conv2)
         full_con = Dense(neurons_full, activation='relu')(merged)
-        outputs = Dense(len(self.classes), activation='softmax')(full_con)
-        model = Model(inputs=inputs, outputs=outputs)
-        if (summary):
-            model.summary()
-        if (plot):
-            plot_model(model, 'model.png')
-        self.model = model
+        outputs = self._model_outputs(full_con)
+        self.model = Model(inputs=inputs, outputs=outputs)
+        self._model_visualization()
 
-    def generate_lstm_model(self,
-                            cell_type='lstm',
-                            bidirectional=False,
-                            emb_layer_dim=1,
-                            lstm_units=32,
-                            dropout_rate=0.3,
-                            summary=True, plot=False):
+    def generate_cnndeep_model(self, emb_layer_dim=None, nr_filters=8, kernel_size=16, nr_layers=2,
+                               neurons_full=32, conv_strides=1,
+                               dropout_rate=0.3, max_pool=True):
+        info('generating model')
+        inputs, emb = self._model_inputs(emb_layer_dim)
+        # layer 1
+        conv = Conv1D(filters=nr_filters, kernel_size=kernel_size,
+                      strides=conv_strides, activation='relu')(
+                          emb)
+        if (dropout_rate is not None and dropout_rate > 0):
+            dropout = Dropout(dropout_rate)(conv)
+        else:
+            dropout = conv
+        # layer 2
+        conv2 = Conv2D(filters=nr_filters//2, kernel_size=kernel_size//2,
+                       activation='relu')(dropout)
+        # flatten = Flatten()(pool)
+        # conv2 = Conv1D(filters=nr_filters, kernel_size=kernel_size,strides=1,
+        #                activation='relu')(stack)
+        flatten = Flatten()(conv2)
+        if (max_pool):
+            pool = MaxPooling1D(4)(flatten)
+        else:
+            pool = flatten
+        full_con = Dense(neurons_full, activation='relu')(pool)
+        outputs = self._model_outputs(full_con)
+        self.model = Model(inputs=inputs, outputs=outputs)
+        self._model_visualization()
+
+    def generate_lstm_model(self, emb_layer_dim=None, cell_type='lstm', bidirectional=False,
+                            lstm_units=32, dropout_rate=0.3):
         # adapted from https://keras.io/examples/imdb_bidirectional_lstm/
-        input_shape = (self.max_seq_len,)
-        inputs = Input(shape=input_shape)
-        emb = Embedding(self.enc_dimension, emb_layer_dim)(inputs)
+        inputs, emb = self._model_inputs(emb_layer_dim)
         cell_type = {'lstm': LSTM, 'gru': GRU}[cell_type.lower()]
         if (bidirectional):
             rec_layer = Bidirectional(cell_type(lstm_units))(emb)
@@ -179,48 +217,30 @@ class DCModel:
             dropout = Dropout(dropout_rate)(rec_layer)
         else:
             dropout = rec_layer
-        outputs = Dense(len(self.classes), activation='softmax')(dropout)
-        model = Model(inputs=inputs, outputs=outputs)
-        if (summary):
-            model.summary()
-        if (plot):
-            plot_model(model, 'model.png')
-        self.model = model
+        outputs = self._model_outputs(dropout)
+        self.model = Model(inputs=inputs, outputs=outputs)
+        self._model_visualization()
 
-    def generate_tcn_model(self,
-                           emb_layer_dim=1,
-                           kernel_size=6, dilations=[2 ** i for i in range(9)],
-                           nb_filters=32, dropout_rate=0.0,
-                           summary=True, plot=False):
+    def generate_tcn_model(self, emb_layer_dim=None, kernel_size=6,
+                           dilations=[2 ** i for i in range(9)],
+                           nb_filters=32, dropout_rate=0.0):
         # NOTE: only works with tensorflow 1.*
         from tcn import TCN
-        input_shape = (self.max_seq_len,)
-        inputs = Input(shape=input_shape)
-        emb = Embedding(self.enc_dimension, emb_layer_dim)(inputs)
+        inputs, emb = self._model_inputs(emb_layer_dim)
         o = TCN(return_sequences=False,
                 kernel_size=kernel_size, dilations=dilations,
                 nb_filters=nb_filters, dropout_rate=dropout_rate)(emb)
-        outputs = Dense(len(self.classes), activation='softmax')(o)
-        model = Model(inputs=inputs, outputs=outputs)
-        if (summary):
-            model.summary()
-        if (plot):
-            plot_model(model, 'model.png')
-        self.model = model
+        outputs = self._model_outputs(o)
+        self.model = Model(inputs=inputs, outputs=outputs)
+        self._model_visualization()
 
-    def generate_ff_model(self, summary=True, plot=False):
-        input_shape = (self.max_seq_len, self.enc_dimension)
-        inputs = Input(shape=input_shape)
-        full_con2 = Dense(500, activation='relu')(inputs)
-        full_con3 = Dense(50, activation='relu')(full_con2)
-        flatten = Flatten()(full_con3)
-        outputs = Dense(len(self.classes), activation='softmax')(flatten)
-        model = Model(inputs=inputs, outputs=outputs)
-        if (summary):
-            model.summary()
-        if (plot):
-            plot_model(model, 'model.png')
-        self.model = model
+    def generate_ff_model(self, emb_layer_dim=None, summary=True, plot=False, **ignored_kwargs):
+        inputs, emb = self._model_inputs(emb_layer_dim)
+        full_con = Dense(100, activation='sigmoid')(emb)
+        flatten = Flatten()(full_con)
+        outputs = self._model_outputs(flatten)
+        self.model = Model(inputs=inputs, outputs=outputs)
+        self._model_visualization()
 
     def train(self, train_generator: Sequence,
               val_generator: Sequence = None,
@@ -342,12 +362,12 @@ def emb_cnn():
 
 def grid_search():
     classes = ['Viruses', 'Archaea', 'Bacteria', 'Eukaryota']
-    nr_seqs = 10_000
+    nr_seqs = 100
     batch_size = 500
-    enc_method_str = 'words2index'
+    enc_method_str = 'words2vec'
     enc_method = {'words2index': words2index, 'words2onehot':
-                  words2onehot}[enc_method_str]
-    enc_dimension = 5
+                  words2onehot, 'words2vec': words2vec}[enc_method_str]
+    enc_dimension = 100
     emb_layer_dim = 1
     max_seq_len = 10_000
     epochs = 20
@@ -357,8 +377,9 @@ def grid_search():
     train_g, val_g, test_g = split.to_generators(batch_size,
                                                  enc_method=enc_method,
                                                  enc_dimension=enc_dimension,
-                                                 enc_k=1, enc_stride=1,
+                                                 enc_k=3, enc_stride=3,
                                                  max_seq_len=max_seq_len,
+                                                 w2vfile='word2vec_model.w2v',
                                                  cache=True)
     # early stopping adapted to low batch_size/high #batches
     # seems to converge after ~3 epochs
