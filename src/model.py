@@ -95,8 +95,7 @@ PARAMS = {'nns': {'emb_layer_dim': (int, 1),
                   'early_stopping_restore_weights':
                   (bool, True, None, 'restore best weights'),
                   'summary': (bool, False),
-                  'plot': (bool, False)}
-}
+                  'plot': (bool, False)}}
 
 
 @dataclass
@@ -175,7 +174,8 @@ class DCModel:
         self.model = Model(inputs=inputs, outputs=outputs)
         self._model_visualization()
 
-    def generate_cnndeep_model(self, emb_layer_dim=None, nr_filters=8, kernel_size=16, nr_layers=2,
+    def generate_cnndeep_model(self, emb_layer_dim=None, nr_filters=8,
+                               kernel_size=16, nr_layers=2,
                                neurons_full=32, conv_strides=1,
                                dropout_rate=0.3, max_pool=True):
         info('generating model')
@@ -200,6 +200,42 @@ class DCModel:
         else:
             pool = flatten
         full_con = Dense(neurons_full, activation='relu')(pool)
+        outputs = self._model_outputs(full_con)
+        self.model = Model(inputs=inputs, outputs=outputs)
+        self._model_visualization()
+
+    def generate_cnndeep_predef_model(self, emb_layer_dim=1, nr_filters=72,
+                                      dropout_rate=0.3, max_pool=True,
+                                      **ignored_kwargs):
+        info('generating model')
+        stack_kernel_sizes = [6, 8, 10]
+        inputs, emb = self._model_inputs(emb_layer_dim)
+        # layer 1
+        conv1 = Conv1D(filters=nr_filters, kernel_size=stack_kernel_sizes[0],
+                       strides=1, activation='relu')(
+                          emb)
+        # if (dropout_rate is not None and dropout_rate > 0):
+        #     dropout = Dropout(dropout_rate)(conv1)
+        # else:
+        #     dropout = conv1
+        # layer 2
+        conv2 = Conv1D(filters=nr_filters//2, kernel_size=stack_kernel_sizes[1],
+                       activation='relu')(conv1)
+        # flatten = Flatten()(pool)
+        # conv2 = Conv1D(filters=nr_filters, kernel_size=kernel_size,strides=1,
+        #                activation='relu')(stack)
+        # layer 3
+        conv3 = Conv1D(filters=nr_filters//2, kernel_size=stack_kernel_sizes[2],
+                       activation='relu')(conv2)
+        # flatten = Flatten()(pool)
+        # conv2 = Conv1D(filters=nr_filters, kernel_size=kernel_size,strides=1,
+        #                activation='relu')(stack)
+        flatten3 = Flatten('channels_last')(conv3)
+        # if (max_pool):
+        #     pool = MaxPooling1D(4)(flatten3)
+        # else:
+        #     pool = flatten3
+        full_con = Dense(64, activation='relu')(flatten3)
         outputs = self._model_outputs(full_con)
         self.model = Model(inputs=inputs, outputs=outputs)
         self._model_visualization()
@@ -364,7 +400,7 @@ def grid_search():
     classes = ['Viruses', 'Archaea', 'Bacteria', 'Eukaryota']
     nr_seqs = 100
     batch_size = 500
-    enc_method_str = 'words2vec'
+    enc_method_str = 'words2index'
     enc_method = {'words2index': words2index, 'words2onehot':
                   words2onehot, 'words2vec': words2vec}[enc_method_str]
     enc_dimension = 100
@@ -379,7 +415,6 @@ def grid_search():
                                                  enc_dimension=enc_dimension,
                                                  enc_k=3, enc_stride=3,
                                                  max_seq_len=max_seq_len,
-                                                 w2vfile='word2vec_model.w2v',
                                                  cache=True)
     # early stopping adapted to low batch_size/high #batches
     # seems to converge after ~3 epochs

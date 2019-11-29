@@ -2,9 +2,13 @@ import argparse
 import model
 from generate_data import DataSplit
 from process_inputs import words2index, words2onehot, words2vec
-from tensorflow.keras.callbacks import EarlyStopping
 import logging
 from itertools import product
+import tensorflow as tf
+if (tf.__version__.startswith('1.')):
+    import keras.callbacks as keras_cbs
+else:
+    import tensorflow.keras.callbacks as keras_cbs
 
 
 def str2bool(v):
@@ -21,11 +25,12 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(
         formatter_class=argparse.MetavarTypeHelpFormatter,
         description='runs models')
-    parser.add_argument('type', choices=['cnn', 'lstm', 'tcn', 'ff'],
+    parser.add_argument('type', choices=['cnn', 'cnndeep_predef', 'lstm',
+                                         'tcn', 'ff'],
                         type=str,
                         help='(implemented) type of model to run')
-    parser.add_argument('--verbose', '-v', action='store_true',
-                        help='more detailed output [Default: False]')
+    parser.add_argument('--verbose', '-v', action='store_true')
+    parser.add_argument('--no_tensorboard', action='store_false')
     # add optional arguments
     for group, group_dict in model.PARAMS.items():
         g = parser.add_argument_group(group)
@@ -105,7 +110,7 @@ if __name__ == '__main__':
     callbacks = []
     if (args.early_stopping):
         logging.info('enabling early splitting')
-        early_stopping = EarlyStopping(
+        early_stopping = keras_cbs.EarlyStopping(
             min_delta=args.early_stopping_md, patience=args.early_stopping_p,
             restore_best_weights=args.early_stopping_restore_weights)
         callbacks.append(early_stopping)
@@ -116,7 +121,8 @@ if __name__ == '__main__':
     # model-specific settings
     model_settings = {}
     for key, spec in model.PARAMS['nns'].items():
-        if (not (len(spec) < 3 or args.type in spec[2])):
+        if (not (len(spec) < 3 or any(
+                spec_type in args.type for spec_type in spec[2].split(',')))):
             continue
         val = vars(args)[key]
         if type(val) != list:
@@ -127,6 +133,7 @@ if __name__ == '__main__':
                     product(*(model_settings[key] for key in keys))]
     logging.info(f'creating model architecture: f{args.type}')
     gen_model_fn = {'cnn': m.generate_cnn_model,
+                    'cnndeep_predef': m.generate_cnndeep_predef_model,
                     'lstm': m.generate_lstm_model,
                     'tcn': m.generate_tcn_model,
                     'ff': m.generate_ff_model}[args.type]
@@ -144,11 +151,12 @@ if __name__ == '__main__':
             settings['dilations'] = [2 ** i for i in range(
                 settings['last_dilation_2exp'])]
             del settings['last_dilation_2exp']
-        print(f'configuration {i}/{len(combinations)}\tmodel name: {m.name}, '
-              f'settings: {settings}')
+        print(f'configuration {i+1}/{len(combinations)}\t '
+              f'model name: {m.name}, settings: {settings}')
         gen_model_fn(**settings)
         logging.info('training')
-        m.train(train_g, val_g, epochs=args.epochs, callbacks=callbacks)
+        m.train(train_g, val_g, epochs=args.epochs,
+                tensorboard=(not args.no_tensorboard), callbacks=callbacks)
         logging.info('evaluating')
         m.eval(test_g, args.class_report)
         m.write_to_file(m.name + '.json', args_repr, settings)
