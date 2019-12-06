@@ -68,6 +68,10 @@ PARAMS = {'nns': {'emb_layer_dim': (int, 1),
                    ((list, str),
                     ['Viruses', 'Archaea', 'Bacteria', 'Eukaryota']),
                    'nr_seqs': (int, 10_000), 'batch_size': (int, 500),
+                   'fixed_size_method': (
+                       str, 'pad', None,
+                       'Method for transforming sequences to fixed length',
+                       ['pad', 'window', 'repeat']),
                    'rev_comp': (bool, False), 'rev_comp_mode': (
                        str, 'append', None, '', ['append', 'random']),
                    'enc_dimension': (int, 65),
@@ -82,9 +86,11 @@ PARAMS = {'nns': {'emb_layer_dim': (int, 1),
                     '/home/lo63tor/master/sequences/dna_sequences/files.json'),
                    'enc_method': (str, 'words2index', None, '',
                                   ['words2index', 'words2onehot', 'words2vec']),
-                   'w2vfile': (str, None, None, 'filename of a stored word2vec'
-                               '(gensim) model'),
-                   'max_seq_len': (int, 10_000), },
+                   'w2vfile': (str, None, None, 'filename of a pickled word '
+                               'vector dict'),
+                   'max_seq_len': (int, 10_000, None,
+                                   'Length of *all* sequences when '
+                                   'using any `fixed_size_method`')},
           'run': {'epochs': (int, 100), 'test_split': (float, 0.2),
                   'model_name': (str, model_name()),
                   'class_report': (bool, True, None,
@@ -95,7 +101,8 @@ PARAMS = {'nns': {'emb_layer_dim': (int, 1),
                   'early_stopping_restore_weights':
                   (bool, True, None, 'restore best weights'),
                   'summary': (bool, False),
-                  'plot': (bool, False)}}
+                  'plot': (bool, False),
+                  'save': (bool, False, None, 'save model to `model_name`.h5')}}
 
 
 @dataclass
@@ -110,6 +117,7 @@ class DCModel:
     name: str = model_name()
     summary: bool = False
     plot: bool = False
+    save: bool = False
 
     def __post_init__(self):
         self.trained = None
@@ -139,6 +147,8 @@ class DCModel:
             self.model.summary()
         if (self.plot):
             plot_model(self.model, 'model.png')
+        if (self.save):
+            self.model.save(self.name + '.h5')
 
     def generate_cnn_model(self, emb_layer_dim=None, nr_filters=8,
                            kernel_size=16, nr_layers=2, neurons_full=32,
@@ -205,10 +215,10 @@ class DCModel:
         self._model_visualization()
 
     def generate_cnndeep_predef_model(self, emb_layer_dim=1, nr_filters=72,
-                                      dropout_rate=0.3, max_pool=True,
+                                      dropout_rate=0.1, max_pool=True,
                                       **ignored_kwargs):
         info('generating model')
-        stack_kernel_sizes = [6, 8, 10]
+        stack_kernel_sizes = [6, 20, 6]
         inputs, emb = self._model_inputs(emb_layer_dim)
         # layer 1
         conv1 = Conv1D(filters=nr_filters, kernel_size=stack_kernel_sizes[0],
@@ -219,23 +229,29 @@ class DCModel:
         # else:
         #     dropout = conv1
         # layer 2
-        conv2 = Conv1D(filters=nr_filters//2, kernel_size=stack_kernel_sizes[1],
-                       activation='relu')(conv1)
+        dropout1 = Dropout(0.1)(conv1)
+        conv2 = Conv1D(filters=nr_filters, kernel_size=stack_kernel_sizes[1],
+                       activation='relu')(dropout1)
         # flatten = Flatten()(pool)
         # conv2 = Conv1D(filters=nr_filters, kernel_size=kernel_size,strides=1,
         #                activation='relu')(stack)
         # layer 3
-        conv3 = Conv1D(filters=nr_filters//2, kernel_size=stack_kernel_sizes[2],
-                       activation='relu')(conv2)
+        dropout2 = Dropout(0.1)(conv2)
+        conv3 = Conv1D(filters=nr_filters, kernel_size=stack_kernel_sizes[2],
+                       activation='relu')(dropout2)
         # flatten = Flatten()(pool)
         # conv2 = Conv1D(filters=nr_filters, kernel_size=kernel_size,strides=1,
         #                activation='relu')(stack)
-        flatten3 = Flatten('channels_last')(conv3)
+        dropout3 = Dropout(0.1)(conv3)
+        flatten1 = Flatten('channels_last')(dropout1)
+        flatten2 = Flatten('channels_last')(dropout2)
+        flatten3 = Flatten('channels_last')(dropout3)
+        merged = concatenate([flatten1, flatten2, flatten3])
         # if (max_pool):
         #     pool = MaxPooling1D(4)(flatten3)
         # else:
         #     pool = flatten3
-        full_con = Dense(64, activation='relu')(flatten3)
+        full_con = Dense(64, activation='relu')(merged)
         outputs = self._model_outputs(full_con)
         self.model = Model(inputs=inputs, outputs=outputs)
         self._model_visualization()
@@ -298,6 +314,8 @@ class DCModel:
                                         validation_data=val_generator,
                                         epochs=epochs, callbacks=callbacks)
         self.trained = hist
+        if (self.save):
+            self.model.save(self.name + '.h5')
         return hist
 
     def eval(self, test_generator: Sequence, class_report=True):

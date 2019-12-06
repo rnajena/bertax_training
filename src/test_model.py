@@ -35,29 +35,39 @@ if __name__ == '__main__':
     for group, group_dict in model.PARAMS.items():
         g = parser.add_argument_group(group)
         for name, options in group_dict.items():
-            a_nargs = '+'
-            if (type(options[0]) == tuple):
-                a_type = options[0][1]
-            else:
-                a_type = options[0]
-            if (a_type == bool):
-                a_type = str2bool
-            a_default = options[1]
-            a_model_type = None
+            kw = {}
+            kw['nargs'] = '+'
+            a_raw_type = options[0]
+            kw['default'] = options[1]
             if (len(options) > 2 and options[2] is not None):
-                a_model_type = options[2]
-            a_help = (f'only applicable to {a_model_type}'
-                      if 'a_model_type' in locals()
-                      and a_model_type is not None else '')
+                model_type = options[2]
             if (len(options) > 3):
-                a_help = options[3]
-            a_choices = None
+                kw['help'] = options[3]
+            else:
+                kw['help'] = ''
             if (len(options) > 4):
-                a_choices = options[4]
-            a_help += (' [Default: '
-                       f'{(a_default if a_default is not None else None)}]')
-            g.add_argument(f'--{name}', type=a_type, default=a_default,
-                           help=a_help, choices=a_choices, nargs=a_nargs)
+                kw['choices'] = options[4]
+            if (type(a_raw_type) == tuple):
+                # e.g., 'classes': (((list, str), ['Viruses', 'Archaea']))
+                kw['type'] = a_raw_type[1]
+            else:
+                # e.g., 'emb_layer_dim': (int, 1)
+                kw['type'] = a_raw_type
+            if ('help' == '' and 'model_type' in locals()
+                and model_type is not None):
+                kw['help'] = (f'only applicable to {model_type}')
+            kw['help'] += (
+                ' [Default: '
+                f'{(kw["default"] if kw["default"] is not None else None)}]')
+            if (kw['type'] == bool):
+                if (kw['default'] is False):
+                    del kw['type']
+                    del kw['default']
+                    del kw['nargs']
+                    kw['action'] = 'store_true'
+                else:
+                    kw['type'] = str2bool
+            g.add_argument(f'--{name}', **kw)
     args = parser.parse_args()
     for key, val in vars(args).items():
         # TODO: dont transform params that are intended to be lists
@@ -89,7 +99,8 @@ if __name__ == '__main__':
         words2vec.w2v = None
     if (args.verbose):
         logging.getLogger().setLevel(logging.DEBUG)
-        print(args_repr)
+        from pprint import pprint
+        pprint(args)
     # general settings
     logging.info('splitting and balancing dataset')
     split = DataSplit(args.root_fa_dir, args.nr_seqs,
@@ -99,6 +110,7 @@ if __name__ == '__main__':
     train_g, val_g, test_g = split.to_generators(
         batch_size=args.batch_size, rev_comp=args.rev_comp,
         rev_comp_mode=args.rev_comp_mode,
+        fixed_size_method=args.fixed_size_method,
         enc_method=args.enc_method,
         enc_dimension=args.enc_dimension,
         enc_k=args.enc_k,
@@ -109,7 +121,7 @@ if __name__ == '__main__':
         w2vfile=args.w2vfile)
     callbacks = []
     if (args.early_stopping):
-        logging.info('enabling early splitting')
+        logging.info('enabling early stopping')
         early_stopping = keras_cbs.EarlyStopping(
             min_delta=args.early_stopping_md, patience=args.early_stopping_p,
             restore_best_weights=args.early_stopping_restore_weights)
@@ -117,7 +129,7 @@ if __name__ == '__main__':
     m = model.DCModel(
         classes=args.classes, max_seq_len=args.max_seq_len,
         enc_dimension=args.enc_dimension, name=args.model_name,
-        summary=args.summary, plot=args.plot)
+        summary=args.summary, plot=args.plot, save=args.save)
     # model-specific settings
     model_settings = {}
     for key, spec in model.PARAMS['nns'].items():
@@ -131,6 +143,7 @@ if __name__ == '__main__':
     keys = list(model_settings.keys())
     combinations = [dict(zip(keys, prod)) for prod in
                     product(*(model_settings[key] for key in keys))]
+    # print(combinations)
     logging.info(f'creating model architecture: f{args.type}')
     gen_model_fn = {'cnn': m.generate_cnn_model,
                     'cnndeep_predef': m.generate_cnndeep_predef_model,

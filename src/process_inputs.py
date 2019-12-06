@@ -4,6 +4,7 @@
 from Bio import SeqIO
 from tqdm import tqdm
 from numpy import floor, ceil, where, array
+from random import randint
 
 
 ALPHABET = 'ACGT'
@@ -144,16 +145,16 @@ def words2onehot(word_seq, handle_nonalph='split'):
 
 def words2vec(word_seq, w2vfile):
     if (words2vec.w2v is None):
-        from gensim.models import Word2Vec
-        words2vec.w2v = Word2Vec.load(w2vfile)
+        import pickle
+        words2vec.w2v = pickle.load(open(w2vfile, 'rb'))
     seq_enc = []
     for word in word_seq:
-        if (word not in words2vec.w2v.wv):
+        if (word not in words2vec.w2v):
             special_vector = [0 for _ in range(
-                words2vec.w2v.wv.vector_size)]
+                len(words2vec.w2v[list(words2vec.w2v.keys())[0]]))]
             seq_enc.append(special_vector)
         else:
-            seq_enc.append(words2vec.w2v.wv[word])
+            seq_enc.append(words2vec.w2v[word])
     return seq_enc
 
 
@@ -212,8 +213,8 @@ def encode_inputs(inputs, enc=words2onehot, progress=False):
     return [enc(_) for _ in it]
 
 
-def encode_sequence(seq, max_seq_len, pad=True, method=words2onehot,
-                    k=3, stride=3,
+def encode_sequence(seq, fixed_size_method='pad', method=words2onehot,
+                    k=3, stride=3, max_seq_len=100,
                     **kwargs):
     """
     >>> encode_sequence('ATGGGG', 3, method=words2index, k=3, stride=3)
@@ -224,9 +225,45 @@ def encode_sequence(seq, max_seq_len, pad=True, method=words2onehot,
     [0, 3, 2, 2, 2]
     """
     seq = method(seq2kmers(seq, k, stride), **kwargs)
-    if (pad):
+    if (fixed_size_method == 'pad'):
         seq = pad_sequence(seq, max_seq_len, k=k, pos='end', cut=True)
+    elif (fixed_size_method == 'window'):
+        seq = window(seq, max_seq_len, True, k)
+    elif (fixed_size_method == 'repeat'):
+        seq = repeat(seq, max_seq_len, gaps=10, gaps_k=k)
     return seq
+
+###################################
+# variable length -> fixed length #
+###################################
+
+
+def repeat(seq, max_seq_len, gaps=0, gaps_k=3):
+    """repeat the whole sequence until it has max_seq_len"""
+    reps = max_seq_len // len(seq) + 1
+    pad_el = []
+    if (gaps != 0):
+        if (hasattr(seq[0], '__len__')):
+            pad_el = [0 for i in range(len(seq[0]))]
+        else:
+            pad_el = get_special_index(gaps_k)
+    return ((seq + ([pad_el] * gaps)) * reps)[:max_seq_len]
+
+
+def window(seq, window_size, pad=True, pad_k=3):
+    """return random window of specified size, pad to window_size
+
+    >>> len(window(seq2kmers('ATGGGAGGGTTG'), 5))
+    5
+    >>> len(window(seq2kmers('ATGGGAGGGTTG'), 20))
+    20
+    """
+    start = randint(0, max(len(seq) - window_size, 0))
+    end = start + window_size
+    if (end <= len(seq)):
+        return seq[start:end]
+    else:
+        return pad_sequence(seq[start:], window_size, pad_k, 'end')
 
 
 def pad_sequence(seq, max_seq_len, k=3, pos='end', cut=True):

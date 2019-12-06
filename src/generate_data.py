@@ -145,12 +145,13 @@ class DataSplit:
                 self.labels[data_range[0]: data_range[1] + 1])
 
     def to_generators(self, batch_size, rev_comp=False, rev_comp_mode='append',
-                      enc_method=words2onehot, enc_dimension=64,
-                      enc_k=3, enc_stride=3,
-                      max_seq_len=10_000, force_max_len=True,
-                      cache=False, cache_seq_limit=None, w2vfile=None) -> tuple:
+                      fixed_size_method='pad', enc_method=words2onehot,
+                      enc_dimension=64, enc_k=3, enc_stride=3,
+                      max_seq_len=10_000, force_max_len=True, cache=False,
+                      cache_seq_limit=None, w2vfile=None) -> tuple:
         kwargs = {'classes': self.classes, 'batch_size': batch_size,
                   'rev_comp': rev_comp, 'rev_comp_mode': rev_comp_mode,
+                  'fixed_size_method': fixed_size_method,
                   'enc_method': enc_method, 'enc_dimension': enc_dimension,
                   'enc_k': enc_k, 'enc_stride': enc_stride,
                   'max_seq_len': max_seq_len, 'force_max_len': force_max_len,
@@ -169,6 +170,7 @@ class BatchGenerator(Sequence):
     batch_size: int
     rev_comp: bool = False
     rev_comp_mode: str = 'append'
+    fixed_size_method: str = 'pad'
     enc_method: Callable[[str], list] = words2onehot
     enc_dimension: int = 64
     enc_k: int = 3
@@ -206,7 +208,8 @@ class BatchGenerator(Sequence):
         elif (self.enc_method == words2vec):
             method_kwargs['w2vfile'] = self.w2vfile
         return encode_sequence(
-            raw_seq, self.max_seq_len, pad=True,
+            raw_seq, fixed_size_method=self.fixed_size_method,
+            max_seq_len=self.max_seq_len,
             method=self.enc_method,
             k=self.enc_k,
             stride=self.enc_stride,
