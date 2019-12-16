@@ -106,7 +106,9 @@ if __name__ == '__main__':
     split = DataSplit(args.root_fa_dir, args.nr_seqs,
                       args.classes,
                       from_cache=args.file_names_cache,
-                      train_test_split=args.test_split)
+                      train_test_split=args.test_split,
+                      duplicate_data=(args.rev_comp and
+                                      args.rev_comp_mode == 'independent'))
     train_g, val_g, test_g = split.to_generators(
         batch_size=args.batch_size, rev_comp=args.rev_comp,
         rev_comp_mode=args.rev_comp_mode,
@@ -144,7 +146,7 @@ if __name__ == '__main__':
     combinations = [dict(zip(keys, prod)) for prod in
                     product(*(model_settings[key] for key in keys))]
     # print(combinations)
-    logging.info(f'creating model architecture: f{args.type}')
+    logging.info(f'creating model architecture: {args.type}')
     gen_model_fn = {'cnn': m.generate_cnn_model,
                     'cnndeep_predef': m.generate_cnndeep_predef_model,
                     'lstm': m.generate_lstm_model,

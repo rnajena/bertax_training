@@ -1,6 +1,5 @@
 import numpy as np
 from dataclasses import dataclass
-from typing import Optional
 from generate_data import DataSplit
 from process_inputs import words2index, words2onehot, words2vec
 from logging import info, warning
@@ -19,8 +18,8 @@ if (tf.__version__.startswith('1.')):
     import keras.callbacks as keras_cbs
 else:
     from tensorflow.keras.models import Model
-    from tensorflow.keras.layers import Conv1D, Conv2D, Dropout, MaxPooling1D, Input
-    from tensorflow.keras.layers import Embedding, Dense, Flatten
+    from tensorflow.keras.layers import Conv1D, Conv2D, Dropout, MaxPooling1D
+    from tensorflow.keras.layers import Embedding, Dense, Flatten, Input
     from tensorflow.keras.layers import concatenate, LSTM, Bidirectional, GRU
     from tensorflow.keras.utils import plot_model, Sequence
     from tensorflow.keras import optimizers
@@ -73,7 +72,8 @@ PARAMS = {'nns': {'emb_layer_dim': (int, 1),
                        'Method for transforming sequences to fixed length',
                        ['pad', 'window', 'repeat']),
                    'rev_comp': (bool, False), 'rev_comp_mode': (
-                       str, 'append', None, '', ['append', 'random']),
+                       str, 'append', None, '', ['append', 'random',
+                                                 'independent']),
                    'enc_dimension': (int, 65),
                    'enc_k': (int, 3),
                    'enc_stride': (int, 3),
@@ -84,8 +84,9 @@ PARAMS = {'nns': {'emb_layer_dim': (int, 1),
                    'file_names_cache':
                    (str,
                     '/home/lo63tor/master/sequences/dna_sequences/files.json'),
-                   'enc_method': (str, 'words2index', None, '',
-                                  ['words2index', 'words2onehot', 'words2vec']),
+                   'enc_method':
+                   (str, 'words2index', None, '',
+                    ['words2index', 'words2onehot', 'words2vec']),
                    'w2vfile': (str, None, None, 'filename of a pickled word '
                                'vector dict'),
                    'max_seq_len': (int, 10_000, None,
@@ -102,7 +103,8 @@ PARAMS = {'nns': {'emb_layer_dim': (int, 1),
                   (bool, True, None, 'restore best weights'),
                   'summary': (bool, False),
                   'plot': (bool, False),
-                  'save': (bool, False, None, 'save model to `model_name`.h5')}}
+                  'save':
+                  (bool, False, None, 'save model to `model_name`.h5')}}
 
 
 @dataclass
@@ -256,8 +258,9 @@ class DCModel:
         self.model = Model(inputs=inputs, outputs=outputs)
         self._model_visualization()
 
-    def generate_lstm_model(self, emb_layer_dim=None, cell_type='lstm', bidirectional=False,
-                            lstm_units=32, dropout_rate=0.3):
+    def generate_lstm_model(self, emb_layer_dim=None, cell_type='lstm',
+                            bidirectional=False, lstm_units=32,
+                            dropout_rate=0.3):
         # adapted from https://keras.io/examples/imdb_bidirectional_lstm/
         inputs, emb = self._model_inputs(emb_layer_dim)
         cell_type = {'lstm': LSTM, 'gru': GRU}[cell_type.lower()]
@@ -286,7 +289,8 @@ class DCModel:
         self.model = Model(inputs=inputs, outputs=outputs)
         self._model_visualization()
 
-    def generate_ff_model(self, emb_layer_dim=None, summary=True, plot=False, **ignored_kwargs):
+    def generate_ff_model(self, emb_layer_dim=None, summary=True, plot=False,
+                          **ignored_kwargs):
         inputs, emb = self._model_inputs(emb_layer_dim)
         full_con = Dense(100, activation='sigmoid')(emb)
         flatten = Flatten()(full_con)

@@ -14,6 +14,8 @@ import pickle
 from tqdm import tqdm
 from typing import Optional, Callable
 from Bio.Seq import Seq
+import itertools
+import re
 
 
 @dataclass
@@ -27,6 +29,7 @@ class DataSplit:
     from_cache_format: str = 'json'
     train_test_split: float = 0.2
     val_split: float = 0.05
+    duplicate_data: bool = False
 
     def __post_init__(self):
         self.get_fa_files(self.from_cache, self.from_cache_format)
@@ -80,13 +83,21 @@ class DataSplit:
                 raise Exception(f'{from_cache} is not a valid file name')
             if (from_cache_format == 'json'):
                 with open(from_cache) as f:
+                    info('reading in cached file names')
                     self.file_names, self.labels = json.load(f)
+                    if (self.duplicate_data is not None):
+                        info('duplicating file names and labels')
+                        self.file_names += [f'{_}${self.duplicate_data}'
+                                            for _ in self.file_names]
+                        self.labels *= 2
                     self.file_names = [os.path.join(self.root_fa_dir, f)
                                        for f in self.file_names]
             else:
                 with open(from_cache, 'rb') as f:
+                    info('reading in cached file names')
                     self.file_names, self.labels = pickle.load(f)
         else:
+            info('generating list of file names. This will take a while!')
             for c in self.classes:
                 class_dir = os.path.join(self.root_fa_dir, c, 'split')
                 if (not os.path.isdir(class_dir)):
@@ -102,10 +113,12 @@ class DataSplit:
     def process_fa_files(self):
         """shuffles and balances files"""
         # balance so that every class has {lowest_seq_nr} sequences
+        info('sorting sequences by class')
         class_indices = {c: [i for i, label in enumerate(self.labels)
                              if label == c]
                          for c in self.classes}
         lowest_seq_nr = min([len(class_indices[c]) for c in self.classes])
+        info(f'balancing data with {lowest_seq_nr} sequences for each class')
         if (self.nr_seqs == 0):
             self.nr_seqs = lowest_seq_nr
         if (lowest_seq_nr < self.nr_seqs):
@@ -119,6 +132,7 @@ class DataSplit:
                 file_names_b.append(self.file_names[i])
                 labels_b.append(self.labels[i])
         # shuffle lists
+        info('shuffling data')
         to_shuffle = list(zip(file_names_b, labels_b))
         shuffle(to_shuffle)
         self.file_names, self.labels = zip(*to_shuffle)
@@ -157,6 +171,7 @@ class DataSplit:
                   'max_seq_len': max_seq_len, 'force_max_len': force_max_len,
                   'cache': cache, 'cache_seq_limit': cache_seq_limit,
                   'w2vfile': w2vfile}
+        info('splitting to train,test and validation data generators')
         return (BatchGenerator(*self.get_train_files(), **kwargs),
                 BatchGenerator(*self.get_val_files(), **kwargs),
                 BatchGenerator(*self.get_test_files(), **kwargs))
@@ -189,17 +204,24 @@ class BatchGenerator(Sequence):
         self.cached = {}
 
     def get_seq(self, file_name):
-        raw_seq = read_seq(file_name)
+        raw_seq = read_seq(re.sub(r'\$.*$', '', file_name))
         if (self.rev_comp):
-            seq_rc = str(Seq(raw_seq).reverse_complement())
-            if (self.rev_comp_mode == 'append'):
-                # TODO: maybe padding in between = 3*10 N's
-                raw_seq += seq_rc
-            elif (self.rev_comp_mode == 'random'):
-                raw_seq = choice((raw_seq, seq_rc))
-            else:
-                raise Exception(f'rev_comp_mode {self.rev_comp_mode} '
-                                'not supported')
+            try:
+                seq_rc = str(Seq(raw_seq).reverse_complement())
+                if (self.rev_comp_mode == 'append'):
+                    # TODO: maybe padding in between = 3*10 N's
+                    raw_seq += seq_rc
+                elif (self.rev_comp_mode == 'random'):
+                    raw_seq = choice((raw_seq, seq_rc))
+                elif (self.rev_comp_mode == 'independent'):
+                    if (file_name.endswith('$rev_comp')):
+                        raw_seq = seq_rc
+                else:
+                    raise Exception(f'rev_comp_mode {self.rev_comp_mode} '
+                                    'not supported')
+            except ValueError as e:
+                warning(f'rev_comp of sequence {file_name} could not be '
+                        f'computed: {e}')
         method_kwargs = {}
         if (self.enc_method == words2index):
             method_kwargs['handle_nonalph'] = 'special'

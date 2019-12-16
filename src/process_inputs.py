@@ -214,7 +214,7 @@ def encode_inputs(inputs, enc=words2onehot, progress=False):
 
 
 def encode_sequence(seq, fixed_size_method='pad', method=words2onehot,
-                    k=3, stride=3, max_seq_len=100,
+                    k=3, stride=3, max_seq_len=100, gaps=10,
                     **kwargs):
     """
     >>> encode_sequence('ATGGGG', 3, method=words2index, k=3, stride=3)
@@ -230,7 +230,7 @@ def encode_sequence(seq, fixed_size_method='pad', method=words2onehot,
     elif (fixed_size_method == 'window'):
         seq = window(seq, max_seq_len, True, k)
     elif (fixed_size_method == 'repeat'):
-        seq = repeat(seq, max_seq_len, gaps=10, gaps_k=k)
+        seq = repeat(seq, max_seq_len, gaps=gaps, gaps_k=k)
     return seq
 
 ###################################
@@ -240,7 +240,7 @@ def encode_sequence(seq, fixed_size_method='pad', method=words2onehot,
 
 def repeat(seq, max_seq_len, gaps=0, gaps_k=3):
     """repeat the whole sequence until it has max_seq_len"""
-    reps = max_seq_len // len(seq) + 1
+    reps = max_seq_len // (len(seq) + gaps) + 1
     pad_el = []
     if (gaps != 0):
         if (hasattr(seq[0], '__len__')):
