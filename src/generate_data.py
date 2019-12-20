@@ -8,7 +8,7 @@ import numpy as np
 from dataclasses import dataclass
 from tensorflow.keras.utils import Sequence
 import logging
-from logging import info, warning
+from logging import info, warning, debug
 import json
 import pickle
 from tqdm import tqdm
@@ -29,11 +29,13 @@ class DataSplit:
     from_cache_format: str = 'json'
     train_test_split: float = 0.2
     val_split: float = 0.05
-    duplicate_data: bool = False
+    duplicate_data: Optional[str] = None
+    balance: bool = True
+    shuffle_: bool = True
 
     def __post_init__(self):
         self.get_fa_files(self.from_cache, self.from_cache_format)
-        self.process_fa_files()
+        self.process_fa_files(self.balance, self.shuffle_)
         # files will be split in the order: train, val, test
 
         def abs_range(length, split, offset=0):
@@ -110,7 +112,7 @@ class DataSplit:
                     self.file_names.append(file_name)
                     self.labels.append(c)
 
-    def process_fa_files(self):
+    def process_fa_files(self, balance=True, shuffle_=True):
         """shuffles and balances files"""
         # balance so that every class has {lowest_seq_nr} sequences
         info('sorting sequences by class')
@@ -118,7 +120,6 @@ class DataSplit:
                              if label == c]
                          for c in self.classes}
         lowest_seq_nr = min([len(class_indices[c]) for c in self.classes])
-        info(f'balancing data with {lowest_seq_nr} sequences for each class')
         if (self.nr_seqs == 0):
             self.nr_seqs = lowest_seq_nr
         if (lowest_seq_nr < self.nr_seqs):
@@ -127,10 +128,17 @@ class DataSplit:
             self.nr_seqs = lowest_seq_nr
         file_names_b = []
         labels_b = []
-        for c in self.classes:
-            for i in sample(class_indices[c], self.nr_seqs):
-                file_names_b.append(self.file_names[i])
-                labels_b.append(self.labels[i])
+        if (balance):
+            info(f'balancing data with {lowest_seq_nr} sequences for each class')
+            for c in self.classes:
+                for i in sample(class_indices[c], self.nr_seqs):
+                    file_names_b.append(self.file_names[i])
+                    labels_b.append(self.labels[i])
+        else:
+            file_names_b = self.file_names
+            labels_b = self.labels
+        if (not shuffle_):
+            return
         # shuffle lists
         info('shuffling data')
         to_shuffle = list(zip(file_names_b, labels_b))
@@ -172,6 +180,11 @@ class DataSplit:
                   'cache': cache, 'cache_seq_limit': cache_seq_limit,
                   'w2vfile': w2vfile}
         info('splitting to train,test and validation data generators')
+        split_seqs_nr = {p: self.ranges[p][1] - self.ranges[p][0] + 1
+                         for p in self.ranges}
+        info(f'training: {split_seqs_nr["train"]}, '
+             f'testing: {split_seqs_nr["test"]}, '
+             f'validation: {split_seqs_nr["val"]}')
         return (BatchGenerator(*self.get_train_files(), **kwargs),
                 BatchGenerator(*self.get_val_files(), **kwargs),
                 BatchGenerator(*self.get_test_files(), **kwargs))
@@ -203,19 +216,27 @@ class BatchGenerator(Sequence):
             # self.det_max_seq_len()
         self.cached = {}
 
+    def get_rev_comp(seq):
+        return str(Seq(seq).reverse_complement())
+
     def get_seq(self, file_name):
-        raw_seq = read_seq(re.sub(r'\$.*$', '', file_name))
+        # unnecessary conditional, but small performance boost (maybe)
+        if (self.rev_comp and self.rev_comp_mode == 'independent'):
+            raw_seq = read_seq(re.sub(r'\$.*$', '', file_name))
+        else:
+            raw_seq = read_seq(file_name)
         if (self.rev_comp):
             try:
-                seq_rc = str(Seq(raw_seq).reverse_complement())
                 if (self.rev_comp_mode == 'append'):
                     # TODO: maybe padding in between = 3*10 N's
-                    raw_seq += seq_rc
+                    raw_seq += BatchGenerator.get_rev_comp(raw_seq)
                 elif (self.rev_comp_mode == 'random'):
-                    raw_seq = choice((raw_seq, seq_rc))
+                    raw_seq = choice((raw_seq,
+                                      BatchGenerator.get_rev_comp(raw_seq)))
                 elif (self.rev_comp_mode == 'independent'):
                     if (file_name.endswith('$rev_comp')):
-                        raw_seq = seq_rc
+                        debug(f'{file_name}\'s reverse complement is used')
+                        raw_seq = BatchGenerator.get_rev_comp(raw_seq)
                 else:
                     raise Exception(f'rev_comp_mode {self.rev_comp_mode} '
                                     'not supported')

@@ -86,8 +86,9 @@ if __name__ == '__main__':
     if (args.type == 'tcn'):
         import tensorflow as tf
         if (not tf.__version__.startswith('1.')):
-            raise Exception('You seem to be using tensorflow > version 1. '
-                            'TCN models only work with tensorflow<2')
+            # raise Exception('You seem to be using tensorflow > version 1. '
+            #                 'TCN models only work with tensorflow<2')
+            pass
     if (args.enc_stride > args.enc_k):
         logging.warning(f'The k-mer stride (f{args.enc_stride}) is larger '
                         f'than k ({args.enc_k}). Information will be lost!')
@@ -98,7 +99,7 @@ if __name__ == '__main__':
                 '(gensim) model filename has to be provided')
         words2vec.w2v = None
     if (args.verbose):
-        logging.getLogger().setLevel(logging.DEBUG)
+        logging.getLogger().setLevel(logging.INFO)
         from pprint import pprint
         pprint(args)
     # general settings
@@ -107,8 +108,10 @@ if __name__ == '__main__':
                       args.classes,
                       from_cache=args.file_names_cache,
                       train_test_split=args.test_split,
-                      duplicate_data=(args.rev_comp and
-                                      args.rev_comp_mode == 'independent'))
+                      duplicate_data=(
+                          'rev_comp' if (args.rev_comp and
+                                         args.rev_comp_mode == 'independent')
+                          else None))
     train_g, val_g, test_g = split.to_generators(
         batch_size=args.batch_size, rev_comp=args.rev_comp,
         rev_comp_mode=args.rev_comp_mode,
