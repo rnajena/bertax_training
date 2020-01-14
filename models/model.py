@@ -1,7 +1,7 @@
 import numpy as np
 from dataclasses import dataclass
-from generate_data import DataSplit
-from process_inputs import words2index, words2onehot, words2vec
+from preprocessing.generate_data import DataSplit
+from preprocessing.process_inputs import words2index, words2onehot, words2vec
 from logging import info, warning
 from datetime import datetime
 import json

@@ -12,7 +12,7 @@ import tensorflow.keras.callbacks as keras_cbs
 #     intra_op_parallelism_threads=16,
 #     inter_op_parallelism_threads=16)))
 
-batch_size = 500
+batch_size = 70
 val_steps = 10
 
 import sys
@@ -45,6 +45,9 @@ for word in [''.join(_) for _ in product(ALPHABET + special_letters, repeat=3)]:
         continue
     else:
         token_dict[word] = special_index
+
+# import json
+# json.dump(token_dict, open('keras-bert_token_dict.json', 'w'))
 
 # Build & train the model
 model = get_model(
@@ -166,7 +169,7 @@ class PairBatchGenerator(Sequence):
             batch.append(self.pairs.popleft())
         return PairBatchGenerator.batch_inputs(batch)
 
-split = DataSplit(root_fa_dir, 240_000,
+split = DataSplit(root_fa_dir, 250_000,
                   ['Viruses', 'Archaea', 'Bacteria', 'Eukaryota'],
                   from_cache, balance=True, train_test_split=0,
                   val_split=0.05)
@@ -179,7 +182,7 @@ model.fit_generator(
     validation_data=val_g,
     callbacks=[
         # keras.callbacks.EarlyStopping(monitor='val_loss', patience=5),
-        keras_cbs.ModelCheckpoint('bert.h5')
+        # keras_cbs.ModelCheckpoint('bert.h5')
     ],
 )
 

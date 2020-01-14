@@ -260,13 +260,14 @@ def window(seq, window_size, pad=True, pad_k=3):
     """
     start = randint(0, max(len(seq) - window_size, 0))
     end = start + window_size
-    if (end <= len(seq)):
+    if (end <= len(seq) or not pad):
         return seq[start:end]
     else:
         return pad_sequence(seq[start:], window_size, pad_k, 'end')
 
 
-def pad_sequence(seq, max_seq_len, k=3, pos='end', cut=True):
+def pad_sequence(seq, max_seq_len, k=3, pos='end', cut=True,
+                 overide_padding_char=None):
     """pads sequence (with length > 0) to length `max_seq_len`
 
     the padding element will be:
@@ -281,10 +282,13 @@ def pad_sequence(seq, max_seq_len, k=3, pos='end', cut=True):
     """
     if (cut and len(seq) > max_seq_len):
         return seq[:max_seq_len]
-    if (hasattr(seq[0], '__len__')):
-        pad_el = [0 for i in range(len(seq[0]))]
+    if (overide_padding_char is not None):
+        pad_el = overide_padding_char
     else:
-        pad_el = get_special_index(k)
+        if (hasattr(seq[0], '__len__')):
+            pad_el = [0 for i in range(len(seq[0]))]
+        else:
+            pad_el = get_special_index(k)
     if (pos == 'balanced'):
         padded = (floor((max_seq_len - len(seq))/2) * [pad_el]
                   + seq + ceil((max_seq_len - len(seq))/2) * [pad_el])
