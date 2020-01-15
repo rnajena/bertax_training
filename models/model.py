@@ -9,7 +9,7 @@ from glob import glob
 import re
 import tensorflow as tf
 if (tf.__version__.startswith('1.')):
-    from keras.models import Model
+    from keras.models import Model, load_model
     from keras.layers import Conv1D, Conv2D, Dropout, MaxPooling1D, Input
     from keras.layers import Embedding, Dense, Flatten
     from keras.layers import concatenate, LSTM, Bidirectional, GRU
@@ -45,66 +45,82 @@ def model_name(model=None, unique=True):
 
 # {group: {param_name:
 #   (type|(list, type), default, model_type, help, choices)}}
-PARAMS = {'nns': {'emb_layer_dim': (int, 1),
-                  'dropout_rate': (float, 0.01),
-                  'max_pool': (bool, True, 'cnn'),
-                  # cnn
-                  'nr_filters': (int, 16, 'cnn,tcn'),
-                  'kernel_size': (int, 4, 'cnn,tcn'),
-                  'nr_layers': (int, 16, 'cnn'),
-                  'neurons_full': (int, 64, 'cnn'),
-                  'conv_strides': (int, 1, 'cnn'),
-                  # lstm
-                  'lstm_units': (int, 32, 'lstm'),
-                  'cell_type': (str, 'lstm', 'lstm', '',
-                                ['lstm', 'gru']),
-                  'bidirectional': (bool, True, 'lstm'),
-                  # tcn
-                  'last_dilation_2exp': (int, 9, 'tcn',
-                                         'base-2 exponent of last dilation; '
-                                         'eg.: 3: dilations=[1,2,4,8]')},
-          'data': {'classes':
-                   ((list, str),
-                    ['Viruses', 'Archaea', 'Bacteria', 'Eukaryota']),
-                   'nr_seqs': (int, 10_000), 'batch_size': (int, 500),
-                   'fixed_size_method': (
-                       str, 'pad', None,
-                       'Method for transforming sequences to fixed length',
-                       ['pad', 'window', 'repeat']),
-                   'rev_comp': (bool, False), 'rev_comp_mode': (
-                       str, 'append', None, '', ['append', 'random',
-                                                 'independent']),
-                   'enc_dimension': (int, 65),
-                   'enc_k': (int, 3),
-                   'enc_stride': (int, 3),
-                   'cache_batches': (bool, True),
-                   'cache_seq_limit': (int, None),
-                   'root_fa_dir':
-                   (str, '/home/lo63tor/master/sequences/dna_sequences/'),
-                   'file_names_cache':
-                   (str,
-                    '/home/lo63tor/master/sequences/dna_sequences/files.json'),
-                   'enc_method':
-                   (str, 'words2index', None, '',
-                    ['words2index', 'words2onehot', 'words2vec']),
-                   'w2vfile': (str, None, None, 'filename of a pickled word '
-                               'vector dict'),
-                   'max_seq_len': (int, 10_000, None,
-                                   'Length of *all* sequences when '
-                                   'using any `fixed_size_method`')},
-          'run': {'epochs': (int, 100), 'test_split': (float, 0.2),
-                  'model_name': (str, model_name()),
-                  'class_report': (bool, True, None,
-                                   'prints metrics by class for evalutation'),
-                  'early_stopping': (bool, True),
-                  'early_stopping_md': (float, 0.01, None, 'min_delta'),
-                  'early_stopping_p': (int, 5, None, 'patience'),
-                  'early_stopping_restore_weights':
-                  (bool, True, None, 'restore best weights'),
-                  'summary': (bool, False),
-                  'plot': (bool, False),
-                  'save':
-                  (bool, False, None, 'save model to `model_name`.h5')}}
+PARAMS = {'nns':
+          # * hyper-parameters of neural networks *
+          {'emb_layer_dim': (int, 1),
+           'dropout_rate': (float, 0.01),
+           'max_pool': (bool, True, 'cnn'),
+           # cnn
+           'nr_filters': (int, 16, 'cnn,tcn'),
+           'kernel_size': (int, 4, 'cnn,tcn'),
+           'nr_layers': (int, 16, 'cnn'),
+           'neurons_full': (int, 64, 'cnn'),
+           'conv_strides': (int, 1, 'cnn'),
+           # lstm
+           'lstm_units': (int, 32, 'lstm'),
+           'cell_type': (str, 'lstm', 'lstm', '',
+                         ['lstm', 'gru']),
+           'bidirectional': (bool, True, 'lstm'),
+           # tcn
+           'last_dilation_2exp': (int, 9, 'tcn',
+                                  'base-2 exponent of last dilation; '
+                                  'eg.: 3: dilations=[1,2,4,8]')},
+          'data':
+          # * everything data-related *
+          {'classes':
+           ((list, str),
+            ['Viruses', 'Archaea', 'Bacteria', 'Eukaryota']),
+           'nr_seqs': (int, 10_000), 'batch_size': (int, 500),
+           'fixed_size_method': (
+               str, 'pad', None,
+               'Method for transforming sequences to fixed length',
+               ['pad', 'window', 'repeat']),
+           'rev_comp': (bool, False), 'rev_comp_mode': (
+               str, 'append', None, '', ['append', 'random',
+                                         'independent']),
+           'enc_dimension': (int, 65),
+           'enc_k': (int, 3),
+           'enc_stride': (int, 3),
+           'cache_batches': (bool, True),
+           'cache_seq_limit': (int, None),
+           'root_fa_dir':
+           (str, '/home/lo63tor/master/sequences/dna_sequences/'),
+           'file_names_cache':
+           (str,
+            '/home/lo63tor/master/sequences/dna_sequences/files.json'),
+           'enc_method':
+           (str, 'words2index', None, '',
+            ['words2index', 'words2onehot', 'words2vec']),
+           'w2vfile': (str, None, None, 'filename of a pickled word '
+                       'vector dict'),
+           'bert_token_dict_json':
+           (str, '', None, 'path to the JSON-serialized keras-bert '
+            'token dict'),
+           'bert_pretrained_path':
+           (str, '', None, 'path to pre-trained keras-bert model'),
+           'max_seq_len': (int, 10_000, None,
+                           'Length of *all* sequences when '
+                           'using any `fixed_size_method`')},
+          'run':
+          # ** run/training-related **
+          {'epochs': (int, 100), 'learning_rate': (float, 0.003),
+           'test_split': (float, 0.2),
+           'model_name': (str, model_name()),
+           'class_report': (bool, True, None,
+                            'prints metrics by class for evalutation'),
+           'early_stopping': (bool, True),
+           'early_stopping_md': (float, 0.01, None, 'min_delta'),
+           'early_stopping_p': (int, 5, None, 'patience'),
+           'early_stopping_restore_weights':
+           (bool, True, None, 'restore best weights'),
+           'model_checkpoints': (bool, False, None,
+                                 'saves model after every epoch'),
+           'model_checkpoints_keep_all': (bool, False, None,
+                                          'checkpoints won\'t be overridden'),
+           'summary': (bool, False),
+           'plot': (bool, False),
+           'save':
+           (bool, False, None, 'save model to `model_name`.h5')}}
 
 
 @dataclass
@@ -298,13 +314,26 @@ class DCModel:
         self.model = Model(inputs=inputs, outputs=outputs)
         self._model_visualization()
 
+    def load_model(self, path, custom_objects={}):
+        # NOTE: load_model is prone to fail when using custom
+        # libraries, a model from a different version, ...
+        self.model = load_model(path, custom_objects=custom_objects)
+        self._model_visualization()
+
+    def generate_bert_with_pretrained(self, pretrained_path, **ignored_kwargs):
+        from models.bert_utils import generate_bert_with_pretrained
+        self.model = generate_bert_with_pretrained(pretrained_path,
+                                                   len(self.classes))
+        self._model_visualization()
+
     def train(self, train_generator: Sequence,
               val_generator: Sequence = None,
               optimizer='adam', batch_size=None, epochs=100,
-              val_split=0.05, tensorboard=True, callbacks=[]):
+              val_split=0.05, tensorboard=True, callbacks=[],
+              learning_rate=0.003):
         info(f'training with {epochs} epochs')
         if (optimizer == 'adam'):
-            optimizer = optimizers.Adam(learning_rate=0.003)
+            optimizer = optimizers.Adam(learning_rate=learning_rate)
         self.model.compile(optimizer=optimizer,
                            loss='categorical_crossentropy',
                            metrics=['accuracy'])

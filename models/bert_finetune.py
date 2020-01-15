@@ -50,7 +50,6 @@ token_dict = json.load(open('keras-bert_token_dict.json'))
 # DataGenerator
 max_length = inputs[0].shape[1]
 
-
 def seq2tokens(seq, window=True):
     seq = seq2kmers(seq, k=3, stride=3, pad=True)
     if (window):
@@ -69,7 +68,7 @@ def seq2tokens(seq, window=True):
     return [np.array(indices), np.array(segments)]
 
 
-def process_batch(batch_x):
+def process_bert_tokens_batch(batch_x):
     return [np.array([_[0] for _ in batch_x]),
             np.array([_[1] for _ in batch_x])]
 
@@ -78,7 +77,7 @@ split = DataSplit(root_fa_dir=root_fa_dir, nr_seqs=nr_seqs, classes=classes,
                   from_cache=file_names_cache)
 train_g, val_g, test_g = split.to_generators(
     batch_size=batch_size, custom_encode_sequence=seq2tokens,
-    process_batch_function=process_batch)
+    process_batch_function=process_bert_tokens_batch)
 model_fine.fit_generator(train_g, validation_data=val_g,
                          epochs=epochs)
 result = model_fine.evaluate_generator(test_g)

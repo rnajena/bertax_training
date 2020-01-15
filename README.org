@@ -1,0 +1,12 @@
+#+TITLE: Classification of DNA Sequences
+Library for classifying DNA Sequences.
+
+Written to classify sequences by taxonomy but easily adaptable for
+other classification tasks.
+* Modules
+** =models=
+Various model architectures to be used with the wrapper-class =DCModel=
+** =preprocessing=
+Utilities for sequence input, encoding and model input generation
+** =utils=
+Contains the CLI program for using models

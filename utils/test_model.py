@@ -1,7 +1,4 @@
 import argparse
-import model
-from preprocessing.generate_data import DataSplit
-from preprocessing.process_inputs import words2index, words2onehot, words2vec
 import logging
 from itertools import product
 import tensorflow as tf
@@ -9,6 +6,12 @@ if (tf.__version__.startswith('1.')):
     import keras.callbacks as keras_cbs
 else:
     import tensorflow.keras.callbacks as keras_cbs
+if __name__ == '__main__' and __package__ is None:
+    from os import sys, path
+    sys.path.append(path.dirname(path.dirname(path.abspath(__file__))))
+import models.model as model
+from preprocessing.generate_data import DataSplit
+from preprocessing.process_inputs import words2index, words2onehot, words2vec
 
 
 def str2bool(v):
@@ -26,7 +29,7 @@ if __name__ == '__main__':
         formatter_class=argparse.MetavarTypeHelpFormatter,
         description='runs models')
     parser.add_argument('type', choices=['cnn', 'cnndeep_predef', 'lstm',
-                                         'tcn', 'ff'],
+                                         'tcn', 'ff', 'bert'],
                         type=str,
                         help='(implemented) type of model to run')
     parser.add_argument('--verbose', '-v', action='store_true')
@@ -82,13 +85,30 @@ if __name__ == '__main__':
     args.enc_method = {'words2index': words2index, 'words2onehot':
                        words2onehot, 'words2vec': words2vec}[args.enc_method]
     logging.basicConfig(format='%(asctime)s - [%(levelname)s] %(message)s')
-    # validate arguments
-    if (args.type == 'tcn'):
-        import tensorflow as tf
-        if (not tf.__version__.startswith('1.')):
-            # raise Exception('You seem to be using tensorflow > version 1. '
-            #                 'TCN models only work with tensorflow<2')
-            pass
+    # validate arguments + argument preprocessing
+    # bert-only to_generators-functions
+    custom_encode_sequence = None
+    process_batch_function = None
+    if (args.type == 'bert'):
+        from os.path import exists
+        if (any([path == '' or not exists(path) for path in
+                 [args.bert_token_dict_json, args.bert_pretrained_path]])):
+            raise Exception('both `bert_token_dict_json` and '
+                            '`bert_pretrained_path` have to be specified and '
+                            'be valid files')
+        import json
+        token_dict = json.load(open(args.bert_token_dict_json))
+        logging.info('loaded BERT token dict')
+        from models.bert_utils import seq2tokens, process_bert_tokens_batch
+        if (args.fixed_size_method not in ['pad', 'window']):
+            raise Exception('for bert, only the fixed_size_methods pad and '
+                            'window are implemented as of now')
+        window = args.fixed_size_method == 'window'
+        custom_encode_sequence = (
+            lambda seq: seq2tokens(
+                seq, token_dict, max_length=args.max_seq_len, window=window,
+                k=args.enc_k, stride=args.enc_stride))
+        process_batch_function = process_bert_tokens_batch
     if (args.enc_stride > args.enc_k):
         logging.warning(f'The k-mer stride (f{args.enc_stride}) is larger '
                         f'than k ({args.enc_k}). Information will be lost!')
@@ -123,7 +143,9 @@ if __name__ == '__main__':
         max_seq_len=args.max_seq_len,
         cache=args.cache_batches,
         cache_seq_limit=args.cache_seq_limit,
-        w2vfile=args.w2vfile)
+        w2vfile=args.w2vfile,
+        custom_encode_sequence=custom_encode_sequence,
+        process_batch_function=process_batch_function)
     callbacks = []
     if (args.early_stopping):
         logging.info('enabling early stopping')
@@ -154,7 +176,8 @@ if __name__ == '__main__':
                     'cnndeep_predef': m.generate_cnndeep_predef_model,
                     'lstm': m.generate_lstm_model,
                     'tcn': m.generate_tcn_model,
-                    'ff': m.generate_ff_model}[args.type]
+                    'ff': m.generate_ff_model,
+                    'bert': m.generate_bert_with_pretrained}[args.type]
     if (len(combinations) > 1):
         logging.info('some parameters have multiple values, '
                      'all combinations will be run')
@@ -163,17 +186,27 @@ if __name__ == '__main__':
         import pickle
         from zlib import adler32
         m.name = f'{args.model_name}_{adler32(pickle.dumps(settings))}'
+        if (args.model_checkpoints):
+            logging.info('enabling model checkpoints')
+            if (args.model_checkpoints_keep_all):
+                path = m.name + '_cp_ep{epoch:02d}.h5'
+            else:
+                path = m.name + '_cp.h5'
+            callbacks.append(keras_cbs.ModelCheckpoint(path))
         if (args.type == 'tcn'):
             settings['nb_filters'] = settings['nr_filters']
             del settings['nr_filters']
             settings['dilations'] = [2 ** i for i in range(
                 settings['last_dilation_2exp'])]
             del settings['last_dilation_2exp']
+        elif (args.type == 'bert'):
+            settings['pretrained_path'] = args.bert_pretrained_path
         print(f'configuration {i+1}/{len(combinations)}\t '
               f'model name: {m.name}, settings: {settings}')
         gen_model_fn(**settings)
         logging.info('training')
         m.train(train_g, val_g, epochs=args.epochs,
+                learning_rate=args.learning_rate,
                 tensorboard=(not args.no_tensorboard), callbacks=callbacks)
         logging.info('evaluating')
         m.eval(test_g, args.class_report)
