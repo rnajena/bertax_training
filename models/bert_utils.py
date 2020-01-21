@@ -2,6 +2,7 @@ import keras
 import keras_bert
 from preprocessing.process_inputs import seq2kmers
 from random import randint
+from logging import error
 import numpy as np
 
 # NOTE: uses just keras (instead of tensorflow.keras). Otherwise
@@ -37,8 +38,16 @@ def seq2tokens(seq, token_dict, max_length=250,
     else:
         start = 0
         end = len(seq)
-    indices = [token_dict['[CLS]']] + [token_dict[word] for word in
-                                       seq[start:end]]
+    word_indices = []
+    for word in seq[start:end]:
+        try:
+            index = token_dict[word]
+        except KeyError:
+            error(f'sequence {seq} contains unknown word {word}. '
+                  'This shouldn\'t happen, check the sequence!')
+            index = token_dict('[UNK]')
+        word_indices.append(index)
+    indices = [token_dict['[CLS]']] + word_indices
     if (len(indices) < max_length):
         indices += [token_dict['']] * (max_length - len(indices))
     else:
