@@ -73,7 +73,10 @@ def opt_split(n, min_, max_):
         return 2
     if (min_x % 2 == 1):
         min_x += 1
-    x = (max_x + max(min_x, 2)) // 2
+    # c is a factor that achieves convergence of n / opt_split to
+    # (min_ + max_) / 2
+    c = (min_ + max_)**2 / (2 * min_ * max_)
+    x = (max_x + max(min_x, 2)) // c
     if (x % 2 == 0):
         return x
     else:

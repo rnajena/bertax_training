@@ -45,7 +45,7 @@ def seq2tokens(seq, token_dict, max_length=250,
         except KeyError:
             error(f'sequence {seq} contains unknown word {word}. '
                   'This shouldn\'t happen, check the sequence!')
-            index = token_dict('[UNK]')
+            index = token_dict['[UNK]']
         word_indices.append(index)
     indices = [token_dict['[CLS]']] + word_indices
     if (len(indices) < max_length):
