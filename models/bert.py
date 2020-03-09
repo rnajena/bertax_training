@@ -159,6 +159,7 @@ def random_words(n):
     from random import choices
     return choices([''.join(_) for _ in product(ALPHABET, repeat=3)], k=n)
 
+
 def memory_batch(seq_len, batch_size):
     A = seq_len * batch_size * 8
     B = batch_size * 8
