@@ -1,69 +1,48 @@
-from keras_bert import get_base_dict, get_model, compile_model, gen_batch_inputs
-from itertools import product, combinations
-from random import shuffle
-from collections import deque
+if __name__ == '__main__' and __package__ is None:
+    from os import sys, path
+    sys.path.append(path.dirname(path.dirname(path.abspath(__file__))))
+from keras_bert import get_base_dict, get_model, compile_model
+from keras_bert import gen_batch_inputs
+from itertools import product
 from math import ceil
-from process_inputs import kmer2index, ALPHABET, read_seq, seq2kmers
-from generate_data import DataSplit
-from tensorflow.keras.utils import Sequence
-import tensorflow.keras.callbacks as keras_cbs
-# from keras import backend as K
-# K.set_session(K.tf.Session(config=K.tf.ConfigProto(
-#     intra_op_parallelism_threads=16,
-#     inter_op_parallelism_threads=16)))
-
-batch_size = 70
-val_steps = 10
-
+from preprocessing.process_inputs import ALPHABET, read_seq, seq2kmers
+from preprocessing.generate_data import DataSplit
+from tqdm import tqdm
 import sys
+from math import log10
 
 root_fa_dir = sys.argv[1]
 from_cache = sys.argv[2]
+progress_bar = True
+
+# controlling training sizes
+balance = True
+epochs = 1            # default
+# batch_size = 70                 # default is 256, but probably too big for VRAM
+batch_size = 1                 # test
+val_split = 0.005
+
+# sentence splits
+# chosen to correspond to average protein domain lengths
 min_split = 50
 max_split = 250
-head_num = 5
-transformer_num = 12
-embed_dim = 25
-feed_forward_dim = 100
-seq_len = max_split
-pos_num = max_split
-dropout_rate = 0.05
+
+# bert parameters
+# BERT_BASE (L=12, H=768, A=12)
+seq_len = 512                   # ~= double max_split
+head_num = 12                   # =:A
+transformer_num = 12            # =:L
+embed_dim = 576                 # =:H (NOTE: has to be dividable by A)
+feed_forward_dim = 3072         # default
+pos_num = seq_len
+dropout_rate = 0.1              # default
 
 
-# Build token dictionary
-token_dict = get_base_dict()  # A dict that contains some special tokens
-# normal 3mers
-for word in [''.join(_) for _ in product(ALPHABET, repeat=3)]:
-    token_dict[word] = len(token_dict)
-# special 3mers: all special index
-special_letters = 'NYRSWKMBDHV'
-special_index = len(token_dict)
-token_list = list(token_dict.keys())  # Used for selecting a random word
-# NOTE: special words are NOT in token_list!!!
-for word in [''.join(_) for _ in product(ALPHABET + special_letters, repeat=3)]:
-    if (all(letter in ALPHABET for letter in word)):
-        continue
-    else:
-        token_dict[word] = special_index
-
-# import json
-# json.dump(token_dict, open('keras-bert_token_dict.json', 'w'))
-
-# Build & train the model
-model = get_model(
-    token_num=len(token_dict),
-    head_num=head_num,
-    transformer_num=transformer_num,
-    embed_dim=embed_dim,
-    feed_forward_dim=feed_forward_dim,
-    seq_len=seq_len,
-    pos_num=pos_num,
-    dropout_rate=dropout_rate,
-)
-compile_model(model)
-model.summary()
-
-pairs = deque()
+def get_token_dict(alph=ALPHABET, k=3):
+    token_dict = get_base_dict()
+    for word in [''.join(_) for _ in product(ALPHABET, repeat=k)]:
+        token_dict[word] = len(token_dict)
+    return token_dict
 
 
 def opt_split(n, min_, max_):
@@ -97,113 +76,92 @@ def seq_split_generator(seq, split_min, split_max):
         i += step
 
 
-class FileNameGenerator:
-    def __init__(self, files):
-        # split = DataSplit(root_fa_dir, 100,
-        #                   ['Viruses', 'Archaea', 'Bacteria', 'Eukaryota'],
-        #                   from_cache, balance=True, train_test_split=0,
-        #                   val_split=0.05)
-        self.file_names = files
-        self.i = 0
-
-    def __len__(self):
-        return len(self.file_names)
-
-    def __iter__(self):
-        return self
-
-    def __next__(self):
-        if (self.i < len(self.file_names)):
-            file_name = self.file_names[self.i]
-            self.i += 1
-            return file_name
-        else:
-            raise StopIteration()
-
-
-def add_seq(pairs, file_names):
-    seq = seq2kmers(read_seq(next(file_names)), k=3, stride=3,
-                    pad=True)
-    seq_sentences = [sentence for sentence in
-                     seq_split_generator(seq, min_split, max_split)]
-    i = 1
-    while i <= len(seq_sentences):
-        pair = seq_sentences[i-1:i+1]
-        if (len(pair) == 1):
-            pair.append([])
-        pairs.append(pair)
-        i += 2
-    if (len(pairs) == 0):
-        # empty sequence or what?
-        print(seq, seq_sentences)
-        raise StopIteration()
+def run_epoch(filenames, model_function, progress_bar=False):
+    """trains on all filenames with an unknown amount of sentences(->steps)"""
+    def train_batch(pairs):
+        batch = gen_batch_inputs(
+                pairs,
+                token_dict,
+                token_list,
+                seq_len=seq_len)
+        metrics = model_function(*batch, reset_metrics=False)
+        return metrics
+    metrics = None
+    pairs = []
+    if progress_bar:
+        filenames = tqdm(filenames)
+    for filename in filenames:
+        seq = seq2kmers(read_seq(filename), k=3, stride=3,
+                        pad=True)
+        seq_sentences = [sentence for sentence in
+                         seq_split_generator(seq, min_split, max_split)]
+        pairs.extend(zip(*[iter(seq_sentences)]*2))
+        if (len(pairs) >= batch_size):
+            metrics = train_batch(pairs)
+            pairs = []
+    if (len(pairs) > 0):
+        metrics = train_batch(pairs)
+    return metrics
 
 
-class PairBatchGenerator(Sequence):
-    def __init__(self, files):
-        self.files = files
-        self.pairs = deque()
-        self.files_gen = FileNameGenerator(self.files)
-        self.i = 0
+if __name__ == '__main__':
+    import keras
+    keras.backend.set_floatx('float16')
+    # from tensorflow.keras.mixed_precision import experimental as mixed_precision
+    # policy = mixed_precision.Policy('mixed_float16')
+    # mixed_precision.set_policy(policy)
+    # print('Compute dtype: %s' % policy.compute_dtype)
+    # print('Variable dtype: %s' % policy.variable_dtype)
+    # import tensorflow
+    # tensorflow.keras.backend.set_floatx('float16')
+    token_dict = get_token_dict()
+    token_list = list(token_dict)
 
-    def batch_inputs(batch):
-        return(gen_batch_inputs(
-            batch,
-            token_dict,
-            token_list,
-            seq_len=max_split,
-            mask_rate=0.3,
-            swap_sentence_rate=1.0,
-        ))
+    # Build & train the model
+    model = get_model(
+        token_num=len(token_dict),
+        head_num=head_num,
+        transformer_num=transformer_num,
+        embed_dim=embed_dim,
+        feed_forward_dim=feed_forward_dim,
+        seq_len=seq_len,
+        pos_num=pos_num,
+        dropout_rate=dropout_rate,
+    )
+    compile_model(model)
+    model.summary()
 
-    def __len__(self):
-        # lower bound for now, exact calculation expensive
-        return len(self.files) // batch_size
+    # NOTE: because of internal implementation: val_data := test_data
+    split = DataSplit(root_fa_dir,
+                      # 10,      # test
+                      12_000_000,
+                      ['Viruses', 'Archaea', 'Bacteria', 'Eukaryota'],
+                      from_cache, balance=balance, train_test_split=val_split,
+                      val_split=0)
+    print('split done')
+    files_train = split.get_train_files()[0]
+    files_val = split.get_test_files()[0]
+    for i in range(epochs):
+        print(f'=== Epoch {i+1:2}/{epochs} ===')
+        print('training')
+        metrics = run_epoch(files_train, model.train_on_batch, progress_bar)
+        print('training metrics', metrics)
+        filename = f'bert_v1_epoch{i+1}.h5'
+        print(f'saved to {filename}')
+        model.save(filename)
+        print('validating')
+        metrics = run_epoch(files_val, model.test_on_batch)
+        print('validation metrics', metrics)
+    model.save(f'bert_v1_trained.h5')
 
-    def __getitem__(self, idx):
-        if (self.i % len(self) == 0):
-            self.files_gen = FileNameGenerator(self.files)
-            self.pairs.clear()
-        self.i += 1
-        batch = []
-        for i in range(batch_size):
-            if (len(self.pairs) == 0):
-                add_seq(self.pairs, self.files_gen)
-            batch.append(self.pairs.popleft())
-        return PairBatchGenerator.batch_inputs(batch)
 
-split = DataSplit(root_fa_dir, 250_000,
-                  ['Viruses', 'Archaea', 'Bacteria', 'Eukaryota'],
-                  from_cache, balance=True, train_test_split=0,
-                  val_split=0.05)
-train_g = PairBatchGenerator(split.get_train_files()[0])
-val_g = PairBatchGenerator(split.get_val_files()[0])
+def random_words(n):
+    from random import choices
+    return choices([''.join(_) for _ in product(ALPHABET, repeat=3)], k=n)
 
-model.fit_generator(
-    generator=train_g,
-    epochs=100,
-    validation_data=val_g,
-    callbacks=[
-        # keras.callbacks.EarlyStopping(monitor='val_loss', patience=5),
-        # keras_cbs.ModelCheckpoint('bert.h5')
-    ],
-)
+def memory_batch(seq_len, batch_size):
+    A = seq_len * batch_size * 8
+    B = batch_size * 8
+    return 3*A + A + B
 
-model.save('bert.h5')
-exit(0)
-
-# Use the trained model
-inputs, output_layer = get_model(
-    token_num=len(token_dict),
-    head_num=head_num,
-    transformer_num=transformer_num,
-    embed_dim=embed_dim,
-    feed_forward_dim=feed_forward_dim,
-    seq_len=seq_len,
-    pos_num=pos_num,
-    dropout_rate=dropout_rate,
-    training=False,      # The input layers and output layer will be returned if `training` is `False`
-    trainable=False,     # Whether the model is trainable. The default value is the same with `training`
-    output_layer_num=4,  # The number of layers whose outputs will be concatenated as a single output.
-                         # Only available when `training` is `False`.
-)
+# memory_batch(512, 250)
