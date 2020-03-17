@@ -284,7 +284,7 @@ class BatchGenerator(Sequence):
         batch_y = np.array([class_vectors[label] for label in batch_labels])
         if (self.process_batch_function is not None):
             batch_x = self.process_batch_function(batch_x)
-        result = (batch_x, batch_y)
+        result = (np.array(batch_x), batch_y)
         if (self.cache):
             if (self.cache_seq_limit is not None
                 and len(self.cached) * self.batch_size

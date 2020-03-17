@@ -329,7 +329,7 @@ class DCModel:
     def train(self, train_generator: Sequence,
               val_generator: Sequence = None,
               optimizer='adam', batch_size=None, epochs=100,
-              val_split=0.05, tensorboard=True, callbacks=[],
+              val_split=0.05, tensorboard=False, callbacks=[],
               learning_rate=0.003):
         info(f'training with {epochs} epochs')
         if (optimizer == 'adam'):
@@ -343,9 +343,9 @@ class DCModel:
         # self.model.fit(self.data[0], self.data[2], batch_size=32,
         #                epochs=epochs, validation_split=val_split,
         #                callbacks=callbacks)
-        hist = self.model.fit_generator(train_generator,
-                                        validation_data=val_generator,
-                                        epochs=epochs, callbacks=callbacks)
+        hist = self.model.fit(train_generator,
+                              validation_data=val_generator,
+                              epochs=epochs, callbacks=callbacks)
         self.trained = hist
         if (self.save):
             self.model.save(self.name + '.h5')
