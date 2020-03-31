@@ -54,7 +54,7 @@ def word_type(word_seq):
 #####################
 
 
-def seq2kmers(seq, k=3, stride=3, pad=True):
+def seq2kmers(seq, k=3, stride=3, pad=True, to_upper=True):
     """transforms sequence to k-mer sequence.
     If specified, end will be padded so no character is lost"""
     if (k == 1 and stride == 1):
@@ -62,7 +62,11 @@ def seq2kmers(seq, k=3, stride=3, pad=True):
         return seq
     kmers = []
     for i in range(0, len(seq) - k + 1, stride):
-        kmers.append(seq[i:i+k])
+        kmer = seq[i:i+k]
+        if to_upper:
+            kmers.append(kmer.upper())
+        else:
+            kmers.append(kmer)
     if (pad and len(seq) - (i + k)) % k != 0:
         kmers.append(seq[i+k:].ljust(k, 'N'))
     return kmers
