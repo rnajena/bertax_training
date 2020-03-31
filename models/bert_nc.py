@@ -41,7 +41,7 @@ class FragmentGenerator(Sequence):
         global token_dict, token_list
         batch_fragments = self.fragments[idx * batch_size:
                                          (idx+1) * batch_size]
-        batch_seqs = [seq2kmers(seq, k=3, stride=3, pad=False)
+        batch_seqs = [seq2kmers(seq, k=3, stride=3, pad=False).upper()
                       for seq in batch_fragments]
         sentences = [[seq[:len(seq)//2], seq[len(seq)//2:]]
                      for seq in batch_seqs]
