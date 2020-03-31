@@ -17,9 +17,9 @@ progress_bar = True
 
 # controlling training sizes
 balance = True
-epochs = 1            # default
-# batch_size = 70                 # default is 256, but probably too big for VRAM
-batch_size = 1                 # test
+epochs = 15            # default
+batch_size = 256                 # default is 256, but probably too big for VRAM
+# batch_size = 1                 # test
 val_split = 0.005
 
 # sentence splits
@@ -32,7 +32,7 @@ max_split = 250
 seq_len = 512                   # ~= double max_split
 head_num = 12                   # =:A
 transformer_num = 12            # =:L
-embed_dim = 576                 # =:H (NOTE: has to be dividable by A)
+embed_dim = 768                 # =:H (NOTE: has to be dividable by A)
 feed_forward_dim = 3072         # default
 pos_num = seq_len
 dropout_rate = 0.1              # default
@@ -105,8 +105,8 @@ def run_epoch(filenames, model_function, progress_bar=False):
 
 
 if __name__ == '__main__':
-    import keras
-    keras.backend.set_floatx('float16')
+    # import keras
+    # keras.backend.set_floatx('float16')
     # from tensorflow.keras.mixed_precision import experimental as mixed_precision
     # policy = mixed_precision.Policy('mixed_float16')
     # mixed_precision.set_policy(policy)
