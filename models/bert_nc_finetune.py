@@ -69,7 +69,8 @@ class FragmentGenerator(Sequence):
                 indices = indices[:self.seq_len]
             segments = [0 for _ in range(self.seq_len)]
             batch_x.append([np.array(indices), np.array(segments)])
-        return (batch_x, batch_y)
+        return ([np.array([_[0] for _ in batch_x]),
+                np.array([_[1] for _ in batch_x])], batch_y)
 
 def get_fine_model(pretrained_model_file):
     custom_objects = {'GlorotNormal': keras.initializers.glorot_normal,
@@ -106,10 +107,10 @@ if __name__ == '__main__':
     parser.add_argument('--nr_seqs', type=int, default=250_000)
     parser.add_argument('--learning_rate', type=float, default=5e-5)
     args = parser.parse_args()
-    args = parser.parse_args(['output/bert_nc_ep13.h5',
-                              '/home/lo63tor/master/dna_class/output/genomic_fragments/',
-                              '--seq_len', '502', '--batch_size', '32',
-                              '--nr_seqs', '1000'])
+    # args = parser.parse_args(['output/bert_nc_ep13.h5',
+    #                           '/home/lo63tor/master/dna_class/output/genomic_fragments/',
+    #                           '--seq_len', '502', '--batch_size', '32',
+    #                           '--nr_seqs', '1000'])
     batch_size = args.batch_size
     learning_rate = args.learning_rate
     token_dict = get_token_dict(ALPHABET, k=3)
@@ -117,13 +118,14 @@ if __name__ == '__main__':
     model, max_length = get_fine_model(args.pretrained_bert)
     model.summary()
     # loading training data
-    x, y = load_fragments(args.fragments_dir, False)
+    x, y = load_fragments(args.fragments_dir)
     f_train_x, f_test_x, f_train_y, f_test_y = train_test_split(
         x, y, test_size=0.2)
     f_train_x, f_val_x, f_train_y, f_val_y = train_test_split(
         f_train_x, f_train_y, test_size=0.05)
-    model.fit_generator(
-        generator=FragmentGenerator(f_train_x, f_train_y, max_length),
+    # val_g = FragmentGenerator(f_val_x, f_val_y, max_length)
+    model.fit(
+        FragmentGenerator(f_train_x, f_train_y, max_length),
         epochs=args.epochs,
         validation_data=FragmentGenerator(f_val_x, f_val_y, max_length))
     model.save('bert_nc_finetuned.h5')
