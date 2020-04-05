@@ -247,20 +247,20 @@ class DCModel:
         # else:
         #     dropout = conv1
         # layer 2
-        dropout1 = Dropout(0.1)(conv1)
+        dropout1 = Dropout(dropout_rate)(conv1)
         conv2 = Conv1D(filters=nr_filters, kernel_size=stack_kernel_sizes[1],
                        activation='relu')(dropout1)
         # flatten = Flatten()(pool)
         # conv2 = Conv1D(filters=nr_filters, kernel_size=kernel_size,strides=1,
         #                activation='relu')(stack)
         # layer 3
-        dropout2 = Dropout(0.1)(conv2)
+        dropout2 = Dropout(dropout_rate)(conv2)
         conv3 = Conv1D(filters=nr_filters, kernel_size=stack_kernel_sizes[2],
                        activation='relu')(dropout2)
         # flatten = Flatten()(pool)
         # conv2 = Conv1D(filters=nr_filters, kernel_size=kernel_size,strides=1,
         #                activation='relu')(stack)
-        dropout3 = Dropout(0.1)(conv3)
+        dropout3 = Dropout(dropout_rate)(conv3)
         flatten1 = Flatten('channels_last')(dropout1)
         flatten2 = Flatten('channels_last')(dropout2)
         flatten3 = Flatten('channels_last')(dropout3)
