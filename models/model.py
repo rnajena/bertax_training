@@ -217,22 +217,14 @@ class DCModel:
         conv = Conv1D(filters=nr_filters, kernel_size=kernel_size,
                       strides=conv_strides, activation='relu')(
                           emb)
-        if (dropout_rate is not None and dropout_rate > 0):
-            dropout = Dropout(dropout_rate)(conv)
-        else:
-            dropout = conv
+        pool = MaxPooling1D(4)(conv)
         # layer 2
-        conv2 = Conv2D(filters=nr_filters//2, kernel_size=kernel_size//2,
-                       activation='relu')(dropout)
-        # flatten = Flatten()(pool)
-        # conv2 = Conv1D(filters=nr_filters, kernel_size=kernel_size,strides=1,
-        #                activation='relu')(stack)
-        flatten = Flatten()(conv2)
-        if (max_pool):
-            pool = MaxPooling1D(4)(flatten)
-        else:
-            pool = flatten
-        full_con = Dense(neurons_full, activation='relu')(pool)
+        conv2 = Conv2D(filters=nr_filters, kernel_size=kernel_size,
+                       activation='relu')(pool)
+        pool2 = MaxPooling1D(8)(conv2)
+        drop = Dropout(dropout_rate)(pool2)
+        flatten = Flatten()(drop)
+        full_con = Dense(neurons_full, activation='relu')(flatten)
         outputs = self._model_outputs(full_con)
         self.model = Model(inputs=inputs, outputs=outputs)
         self._model_visualization()

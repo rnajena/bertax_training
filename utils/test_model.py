@@ -29,7 +29,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(
         formatter_class=argparse.MetavarTypeHelpFormatter,
         description='runs models')
-    parser.add_argument('type', choices=['cnn', 'cnndeep_predef', 'lstm',
+    parser.add_argument('type', choices=['cnn', 'cnndeep', 'cnndeep_predef', 'lstm',
                                          'tcn', 'ff', 'bert'],
                         type=str,
                         help='(implemented) type of model to run')
@@ -194,6 +194,7 @@ if __name__ == '__main__':
     # print(combinations)
     logging.info(f'creating model architecture: {args.type}')
     gen_model_fn = {'cnn': m.generate_cnn_model,
+                    'cnndeep': m.generate_cnndeep_model,
                     'cnndeep_predef': m.generate_cnndeep_predef_model,
                     'lstm': m.generate_lstm_model,
                     'tcn': m.generate_tcn_model,
