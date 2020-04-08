@@ -67,7 +67,10 @@ PARAMS = {'nns':
                                   'eg.: 3: dilations=[1,2,4,8]')},
           'data':
           # * everything data-related *
-          {'classes':
+          {'data_source':
+           (str, 'genes', None,
+            'dataset type to use', ['genes', 'fragments']),
+           'classes':
            ((list, str),
             ['Viruses', 'Archaea', 'Bacteria', 'Eukaryota']),
            'nr_seqs': (int, 10_000), 'batch_size': (int, 500),
@@ -85,6 +88,8 @@ PARAMS = {'nns':
            'cache_seq_limit': (int, None),
            'root_fa_dir':
            (str, '/home/lo63tor/master/sequences/dna_sequences/'),
+           'root_fragments_dir':
+           (str, '/home/lo63tor/master/dna_class/output/genomic_fragments'),
            'file_names_cache':
            (str,
             '/home/lo63tor/master/sequences/dna_sequences/files.json'),

@@ -39,12 +39,14 @@ def load_fragments(fragments_dir, shuffle_=True, nr_seqs=None):
 
 class FragmentGenerator(Sequence):
 
-    def __init__(self, x, y, seq_len):
+    def __init__(self, x, y, seq_len, k=3, stride=3):
         global classes
         self.x = x
         self.y = y
         self.seq_len = seq_len
         self.class_vectors = get_class_vectors(classes)
+        self.k = k
+        self.stride = stride
 
     def __len__(self):
         global batch_size
@@ -57,8 +59,9 @@ class FragmentGenerator(Sequence):
         batch_classes = self.y[idx * batch_size:
                                (idx+1) * batch_size]
         batch_y = np.array([self.class_vectors[c] for c in batch_classes])
-        batch_x = np.array([np.array(encode_sequence(seq, 'window', words2index, k=3, stride=3,
-                                                max_seq_len=self.seq_len, handle_nonalph='special'))
+        batch_x = np.array([np.array(encode_sequence(
+            seq, 'window', words2index, k=self.k, stride=self.stride,
+            max_seq_len=self.seq_len, handle_nonalph='special'))
                             for seq in batch_fragments])
         return (batch_x, batch_y)
 
