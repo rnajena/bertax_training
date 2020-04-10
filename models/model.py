@@ -219,7 +219,7 @@ class DCModel:
                           emb)
         pool = MaxPooling1D(4)(conv)
         # layer 2
-        conv2 = Conv2D(filters=nr_filters, kernel_size=kernel_size,
+        conv2 = Conv1D(filters=nr_filters, kernel_size=kernel_size,
                        activation='relu')(pool)
         pool2 = MaxPooling1D(8)(conv2)
         drop = Dropout(dropout_rate)(pool2)
