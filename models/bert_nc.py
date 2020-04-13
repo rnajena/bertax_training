@@ -66,7 +66,10 @@ if __name__ == '__main__':
     parser.add_argument('--head_num', type=int, default=12)
     parser.add_argument('--transformer_num', type=int, default=12)
     parser.add_argument('--embed_dim', type=int, default=768)
+    parser.add_argument('--feed_forward_dim', type=int, default=3072)
+    parser.add_argument('--dropout_rate', type=float, default=0.1)
     parser.add_argument('--epochs', type=int, default=50)
+    parser.add_argument('--name', type=str, default='bert_nc')
     args = parser.parse_args()
     # args = parser.parse_args(['/home/lo63tor/master/dna_class/output/genomic_fragments/',
     #                           '--seq_len', '502', '--batch_size', '70', '--head_num', '2',
@@ -80,8 +83,10 @@ if __name__ == '__main__':
         head_num=args.head_num,
         transformer_num=args.transformer_num,
         embed_dim=args.embed_dim,
+        feed_forward_dim=args.feed_forward_dim,
         seq_len=args.seq_len,
-        pos_num=args.seq_len)
+        pos_num=args.seq_len,
+        dropout_rate=args.dropout_rate)
     compile_model(model)
     model.summary()
     # loading training data
@@ -93,5 +98,5 @@ if __name__ == '__main__':
         generator=FragmentGenerator(f_train, args.seq_len),
         epochs=args.epochs,
         validation_data=FragmentGenerator(f_val, args.seq_len),
-        callbacks=[ModelCheckpoint('bert_nc_ep{epoch:02d}.h5')])
-    model.save('bert_nc_trained.h5')
+        callbacks=[ModelCheckpoint(args.name + '_ep{epoch:02d}.h5')])
+    model.save(args.name + '_trained.h5')
