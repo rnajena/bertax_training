@@ -198,7 +198,7 @@ if __name__ == '__main__':
     parser.add_argument('--outdir', '-o', default='.')
     parser.add_argument('--thr', '-t', type=float, default=16e9)
     parser.add_argument('--nonalph_cutoff', type=float, default=None)
-    parser.add_argument('--no_comp', type=bool, default=False)
+    parser.add_argument('--no_comp', action='store_true')
     logging.getLogger().setLevel(logging.INFO)
     args = parser.parse_args()
     nr_seqs = args.nr_fragments

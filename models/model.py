@@ -292,14 +292,14 @@ class DCModel:
 
     def generate_tcn_model(self, emb_layer_dim=None, kernel_size=6,
                            dilations=[2 ** i for i in range(9)],
-                           nb_filters=32, dropout_rate=0.0, noncausal=False):
+                           nb_filters=32, dropout_rate=0.0, noncausal_dilations=False):
         # NOTE: only works with tensorflow 1.*
         from tcn import TCN
         inputs, emb = self._model_inputs(emb_layer_dim)
         o = TCN(return_sequences=False,
                 kernel_size=kernel_size, dilations=dilations,
                 nb_filters=nb_filters, dropout_rate=dropout_rate,
-                padding=('same' if noncausal else 'causal'))(emb)
+                padding=('same' if noncausal_dilations else 'causal'))(emb)
         outputs = self._model_outputs(o)
         self.model = Model(inputs=inputs, outputs=outputs)
         self._model_visualization()
