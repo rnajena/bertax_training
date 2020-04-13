@@ -10,8 +10,9 @@ if __name__ == '__main__' and __package__ is None:
     from os import sys, path
     sys.path.append(path.dirname(path.dirname(path.abspath(__file__))))
 import models.model as model
-from preprocessing.generate_data import DataSplit
+from preprocessing.generate_data import DataSplit, load_fragments, FragmentGenerator
 from preprocessing.process_inputs import words2index, words2onehot, words2vec
+from sklearn.model_selection import train_test_split
 
 
 def str2bool(v):
@@ -28,7 +29,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(
         formatter_class=argparse.MetavarTypeHelpFormatter,
         description='runs models')
-    parser.add_argument('type', choices=['cnn', 'cnndeep_predef', 'lstm',
+    parser.add_argument('type', choices=['cnn', 'cnndeep', 'cnndeep_predef', 'lstm',
                                          'tcn', 'ff', 'bert'],
                         type=str,
                         help='(implemented) type of model to run')
@@ -124,28 +125,48 @@ if __name__ == '__main__':
         pprint(args)
     # general settings
     logging.info('splitting and balancing dataset')
-    split = DataSplit(args.root_fa_dir, args.nr_seqs,
-                      args.classes,
-                      from_cache=args.file_names_cache,
-                      train_test_split=args.test_split,
-                      duplicate_data=(
-                          'rev_comp' if (args.rev_comp and
-                                         args.rev_comp_mode == 'independent')
-                          else None))
-    train_g, val_g, test_g = split.to_generators(
-        batch_size=args.batch_size, rev_comp=args.rev_comp,
-        rev_comp_mode=args.rev_comp_mode,
-        fixed_size_method=args.fixed_size_method,
-        enc_method=args.enc_method,
-        enc_dimension=args.enc_dimension,
-        enc_k=args.enc_k,
-        enc_stride=args.enc_stride,
-        max_seq_len=args.max_seq_len,
-        cache=args.cache_batches,
-        cache_seq_limit=args.cache_seq_limit,
-        w2vfile=args.w2vfile,
-        custom_encode_sequence=custom_encode_sequence,
-        process_batch_function=process_batch_function)
+    if (args.data_source == 'genes'):
+        split = DataSplit(args.root_fa_dir, args.nr_seqs,
+                          args.classes,
+                          from_cache=args.file_names_cache,
+                          train_test_split=args.test_split,
+                          duplicate_data=(
+                              'rev_comp' if (args.rev_comp and
+                                             args.rev_comp_mode == 'independent')
+                              else None))
+        train_g, val_g, test_g = split.to_generators(
+            batch_size=args.batch_size, rev_comp=args.rev_comp,
+            rev_comp_mode=args.rev_comp_mode,
+            fixed_size_method=args.fixed_size_method,
+            enc_method=args.enc_method,
+            enc_dimension=args.enc_dimension,
+            enc_k=args.enc_k,
+            enc_stride=args.enc_stride,
+            max_seq_len=args.max_seq_len,
+            cache=args.cache_batches,
+            cache_seq_limit=args.cache_seq_limit,
+            w2vfile=args.w2vfile,
+            custom_encode_sequence=custom_encode_sequence,
+            process_batch_function=process_batch_function)
+    elif (args.data_source == 'fragments'):
+        x, y = load_fragments(args.root_fragments_dir, args.classes, nr_seqs=args.nr_seqs)
+        f_train_x, f_test_x, f_train_y, f_test_y = train_test_split(
+            x, y, test_size=args.test_split)
+        f_train_x, f_val_x, f_train_y, f_val_y = train_test_split(
+            f_train_x, f_train_y, test_size=0.05)
+        generator_params = {
+            'seq_len': args.max_seq_len,
+            'k': args.enc_k,
+            'stride': args.enc_stride,
+            'batch_size': args.batch_size,
+            'classes': args.classes,
+            'fixed_size_method': args.fixed_size_method,
+            'enc_method': args.enc_method}
+        train_g = FragmentGenerator(f_train_x, f_train_y, **generator_params)
+        val_g = FragmentGenerator(f_val_x, f_val_y, **generator_params)
+        test_g = FragmentGenerator(f_test_x, f_test_y, **generator_params)
+    else:
+        raise Exception(f'data source "{args.data_source}" is not accepted')
     callbacks = []
     if (args.early_stopping):
         logging.info('enabling early stopping')
@@ -173,6 +194,7 @@ if __name__ == '__main__':
     # print(combinations)
     logging.info(f'creating model architecture: {args.type}')
     gen_model_fn = {'cnn': m.generate_cnn_model,
+                    'cnndeep': m.generate_cnndeep_model,
                     'cnndeep_predef': m.generate_cnndeep_predef_model,
                     'lstm': m.generate_lstm_model,
                     'tcn': m.generate_tcn_model,

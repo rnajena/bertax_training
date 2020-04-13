@@ -2,7 +2,7 @@ if __name__ == '__main__' and __package__ is None:
     from os import sys, path
     sys.path.append(path.dirname(path.dirname(path.abspath(__file__))))
 from random import randint, choice, sample
-from preprocessing.process_inputs import seq2kmers
+from preprocessing.process_inputs import seq2kmers, ALPHABET
 from preprocessing.genome_db import GenomeDB
 from collections import defaultdict
 from datasketch import MinHash
@@ -65,7 +65,7 @@ def get_fragment(seq, fragment_size=500, k=3):
 
 
 def pick_fragment(taxids, profiles, genome_db, profile_fun, similarity_fun,
-                  max_its=100, **get_kwargs):
+                  max_its=100, nonalph_cutoff=None, **get_kwargs):
     """returns one randomly chosen fragment from the SeqRecords of the given taxids
 
     :param taxids: ids from which to choose, must have entries in genome_db
@@ -82,6 +82,7 @@ def pick_fragment(taxids, profiles, genome_db, profile_fun, similarity_fun,
     """
     its = 0
     fragment = None
+    profile = None
     while fragment is None:
         its += 1
         if (max_its is not None and its > max_its):
@@ -91,8 +92,19 @@ def pick_fragment(taxids, profiles, genome_db, profile_fun, similarity_fun,
         fragment = get_fragment(record, **get_kwargs)
         if fragment is None:
             continue
+        if (nonalph_cutoff is not None):
+            nonalph_perc = (
+                len([letter for letter in fragment
+                     if letter.upper() not in ALPHABET])
+                / len(fragment))
+            if (nonalph_perc > nonalph_cutoff):
+                fragment = None
+                profile = None
+                continue
         profile = profile_fun(str(fragment.seq))
         if (similarity_fun(profile, profiles)):
+            fragment = None
+            profile = None
             continue
     return fragment, profile, taxid
 
@@ -100,7 +112,7 @@ def pick_fragment(taxids, profiles, genome_db, profile_fun, similarity_fun,
 def get_sk_fragments(nr_fragments, orders_dict, genome_db,
                      profile_fun, similarity_fun,
                      max_its=None, order_max_its=None,
-                     thread_nr=None,
+                     nonalph_cutoff=None, thread_nr=None,
                      **get_fragment_kwargs):
     """obtains specified number of fragments based on the given order taxids
 
@@ -137,7 +149,8 @@ def get_sk_fragments(nr_fragments, orders_dict, genome_db,
                 continue
             picked = pick_fragment(avail_taxids, profiles, genome_db,
                                    profile_fun, similarity_fun,
-                                   order_max_its, **get_fragment_kwargs)
+                                   order_max_its, nonalph_cutoff,
+                                   **get_fragment_kwargs)
             if (picked is None):
                 continue
             fragment, profile, species = picked
@@ -184,6 +197,8 @@ if __name__ == '__main__':
     parser.add_argument('nr_fragments', type=int)
     parser.add_argument('--outdir', '-o', default='.')
     parser.add_argument('--thr', '-t', type=float, default=16e9)
+    parser.add_argument('--nonalph_cutoff', type=float, default=None)
+    parser.add_argument('--no_comp', type=bool, default=False)
     logging.getLogger().setLevel(logging.INFO)
     args = parser.parse_args()
     nr_seqs = args.nr_fragments
@@ -194,12 +209,27 @@ if __name__ == '__main__':
     def minhash_defined(seq):
         return minhash(seq, 6, 6)
 
+    def fake_profile_fun(seq):
+        global counter
+        counter += 1
+        return counter
+
     def sk_fragments_plus_stats(sk, outdir='.', thread_nr=None):
         genome_db = load_genomes(
             '/home/lo63tor/master/sequences/dna_sequences/genomes', sk, thr=args.thr)
-        fragments, profiles, speciess = get_sk_fragments(
-            nr_seqs, sk_order_dict[sk], genome_db, minhash_defined,
-            minhash_exists, 10_000_000, None, thread_nr)
+        if (args.no_comp):
+            global counter
+            counter = 0
+            fragments, profiles, speciess = get_sk_fragments(
+            nr_seqs, sk_order_dict[sk], genome_db, fake_profile_fun,
+            minhash_exists, 100_000_000, None, args.nonalph_cutoff, thread_nr)
+        else:
+            fragments, profiles, speciess = get_sk_fragments(
+                nr_seqs, sk_order_dict[sk], genome_db, minhash_defined,
+                minhash_exists, 10_000_000, None, args.nonalph_cutoff, thread_nr)
+        print(
+            f'{len(fragments)} fragments generated, alongside {len(profiles)} '
+            'unique profiles')
         json.dump([str(seq.seq) for seq in fragments],
                   open(os.path.join(outdir, f'{sk}_fragments.json'), 'w'))
         with open(os.path.join(outdir, f'{sk}_species_picked.txt'), 'w') as f:

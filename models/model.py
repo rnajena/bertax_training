@@ -64,10 +64,14 @@ PARAMS = {'nns':
            # tcn
            'last_dilation_2exp': (int, 9, 'tcn',
                                   'base-2 exponent of last dilation; '
-                                  'eg.: 3: dilations=[1,2,4,8]')},
+                                  'eg.: 3: dilations=[1,2,4,8]'),
+           'noncausal_dilations': (bool, False, 'tcn')},
           'data':
           # * everything data-related *
-          {'classes':
+          {'data_source':
+           (str, 'genes', None,
+            'dataset type to use', ['genes', 'fragments']),
+           'classes':
            ((list, str),
             ['Viruses', 'Archaea', 'Bacteria', 'Eukaryota']),
            'nr_seqs': (int, 10_000), 'batch_size': (int, 500),
@@ -85,6 +89,8 @@ PARAMS = {'nns':
            'cache_seq_limit': (int, None),
            'root_fa_dir':
            (str, '/home/lo63tor/master/sequences/dna_sequences/'),
+           'root_fragments_dir':
+           (str, '/home/lo63tor/master/dna_class/output/genomic_fragments'),
            'file_names_cache':
            (str,
             '/home/lo63tor/master/sequences/dna_sequences/files.json'),
@@ -212,22 +218,14 @@ class DCModel:
         conv = Conv1D(filters=nr_filters, kernel_size=kernel_size,
                       strides=conv_strides, activation='relu')(
                           emb)
-        if (dropout_rate is not None and dropout_rate > 0):
-            dropout = Dropout(dropout_rate)(conv)
-        else:
-            dropout = conv
+        pool = MaxPooling1D(4)(conv)
         # layer 2
-        conv2 = Conv2D(filters=nr_filters//2, kernel_size=kernel_size//2,
-                       activation='relu')(dropout)
-        # flatten = Flatten()(pool)
-        # conv2 = Conv1D(filters=nr_filters, kernel_size=kernel_size,strides=1,
-        #                activation='relu')(stack)
-        flatten = Flatten()(conv2)
-        if (max_pool):
-            pool = MaxPooling1D(4)(flatten)
-        else:
-            pool = flatten
-        full_con = Dense(neurons_full, activation='relu')(pool)
+        conv2 = Conv1D(filters=nr_filters, kernel_size=kernel_size,
+                       activation='relu')(pool)
+        pool2 = MaxPooling1D(8)(conv2)
+        drop = Dropout(dropout_rate)(pool2)
+        flatten = Flatten()(drop)
+        full_con = Dense(neurons_full, activation='relu')(flatten)
         outputs = self._model_outputs(full_con)
         self.model = Model(inputs=inputs, outputs=outputs)
         self._model_visualization()
@@ -247,20 +245,20 @@ class DCModel:
         # else:
         #     dropout = conv1
         # layer 2
-        dropout1 = Dropout(0.1)(conv1)
+        dropout1 = Dropout(dropout_rate)(conv1)
         conv2 = Conv1D(filters=nr_filters, kernel_size=stack_kernel_sizes[1],
                        activation='relu')(dropout1)
         # flatten = Flatten()(pool)
         # conv2 = Conv1D(filters=nr_filters, kernel_size=kernel_size,strides=1,
         #                activation='relu')(stack)
         # layer 3
-        dropout2 = Dropout(0.1)(conv2)
+        dropout2 = Dropout(dropout_rate)(conv2)
         conv3 = Conv1D(filters=nr_filters, kernel_size=stack_kernel_sizes[2],
                        activation='relu')(dropout2)
         # flatten = Flatten()(pool)
         # conv2 = Conv1D(filters=nr_filters, kernel_size=kernel_size,strides=1,
         #                activation='relu')(stack)
-        dropout3 = Dropout(0.1)(conv3)
+        dropout3 = Dropout(dropout_rate)(conv3)
         flatten1 = Flatten('channels_last')(dropout1)
         flatten2 = Flatten('channels_last')(dropout2)
         flatten3 = Flatten('channels_last')(dropout3)
@@ -294,13 +292,14 @@ class DCModel:
 
     def generate_tcn_model(self, emb_layer_dim=None, kernel_size=6,
                            dilations=[2 ** i for i in range(9)],
-                           nb_filters=32, dropout_rate=0.0):
+                           nb_filters=32, dropout_rate=0.0, noncausal=False):
         # NOTE: only works with tensorflow 1.*
         from tcn import TCN
         inputs, emb = self._model_inputs(emb_layer_dim)
         o = TCN(return_sequences=False,
                 kernel_size=kernel_size, dilations=dilations,
-                nb_filters=nb_filters, dropout_rate=dropout_rate)(emb)
+                nb_filters=nb_filters, dropout_rate=dropout_rate,
+                padding=('same' if noncausal else 'causal'))(emb)
         outputs = self._model_outputs(o)
         self.model = Model(inputs=inputs, outputs=outputs)
         self._model_visualization()

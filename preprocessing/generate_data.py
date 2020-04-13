@@ -6,14 +6,14 @@ from preprocessing.process_inputs import seq2kmers, seq2nucleotides
 from preprocessing.process_inputs import encode_sequence, read_seq
 from preprocessing.process_inputs import get_class_vectors
 import numpy as np
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from tensorflow.keras.utils import Sequence
 import logging
 from logging import info, warning, debug
 import json
 import pickle
 from tqdm import tqdm
-from typing import Optional, Callable
+from typing import Optional, Callable, List
 from Bio.Seq import Seq
 import itertools
 import re
@@ -291,6 +291,61 @@ class BatchGenerator(Sequence):
                 <= self.cache_seq_limit):
                 self.cached[idx] = result
         return result
+
+
+@dataclass
+class FragmentGenerator(Sequence):
+    x: list
+    y: list
+    seq_len: int = 250
+    k: int = 3
+    stride: int = 3
+    batch_size: int = 70
+    classes: List = field(default_factory=lambda:
+                          ['Viruses', 'Archaea', 'Bacteria', 'Eukaryota'])
+    fixed_size_method: str = 'window'
+    enc_method: Callable[[str], list] = words2index
+
+    def __post_init__(self):
+        self.class_vectors = get_class_vectors(self.classes)
+
+    def __len__(self):
+        return np.ceil(len(self.x) /
+                       float(self.batch_size)).astype(np.int)
+
+    def __getitem__(self, idx):
+        batch_fragments = self.x[idx * self.batch_size:
+                                 (idx+1) * self.batch_size]
+        batch_classes = self.y[idx * self.batch_size:
+                               (idx+1) * self.batch_size]
+        batch_y = np.array([self.class_vectors[c] for c in batch_classes])
+        batch_x = np.array([np.array(encode_sequence(
+            seq, self.fixed_size_method, self.enc_method,
+            k=self.k, stride=self.stride,
+            max_seq_len=self.seq_len, handle_nonalph='special'))
+                            for seq in batch_fragments])
+        return (batch_x, batch_y)
+
+
+def load_fragments(fragments_dir, classes, shuffle_=True, nr_seqs=None):
+    x = []
+    y = []
+    for class_ in classes:
+        fragments = json.load(open(os.path.join(
+            fragments_dir, f'{class_}_fragments.json')))
+        if (nr_seqs is not None):
+            if (not shuffle_):
+                warning('fragments *will* be shuffled because nr_seqs is specified')
+            fragments = sample(fragments, min(nr_seqs, len(fragments)))
+        for fragment in fragments:
+            x.append(fragment)
+            y.append(class_)
+    if (shuffle_):
+        to_shuffle = list(zip(x, y))
+        shuffle(to_shuffle)
+        x, y = zip(*to_shuffle)
+    return x, y
+
 
 
 def gen_files():
