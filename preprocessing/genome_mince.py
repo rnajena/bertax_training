@@ -198,6 +198,7 @@ if __name__ == '__main__':
     parser.add_argument('--outdir', '-o', default='.')
     parser.add_argument('--thr', '-t', type=float, default=16e9)
     parser.add_argument('--nonalph_cutoff', type=float, default=None)
+    parser.add_argument('--no_comp', type=bool, default=False)
     logging.getLogger().setLevel(logging.INFO)
     args = parser.parse_args()
     nr_seqs = args.nr_fragments
@@ -208,12 +209,24 @@ if __name__ == '__main__':
     def minhash_defined(seq):
         return minhash(seq, 6, 6)
 
+    def fake_profile_fun(seq):
+        global counter
+        counter += 1
+        return counter
+
     def sk_fragments_plus_stats(sk, outdir='.', thread_nr=None):
         genome_db = load_genomes(
             '/home/lo63tor/master/sequences/dna_sequences/genomes', sk, thr=args.thr)
-        fragments, profiles, speciess = get_sk_fragments(
-            nr_seqs, sk_order_dict[sk], genome_db, minhash_defined,
-            minhash_exists, 10_000_000, None, args.nonalph_cutoff, thread_nr)
+        if (args.no_comp):
+            global counter
+            counter = 0
+            fragments, profiles, speciess = get_sk_fragments(
+            nr_seqs, sk_order_dict[sk], genome_db, fake_profile_fun,
+            minhash_exists, 100_000_000, None, args.nonalph_cutoff, thread_nr)
+        else:
+            fragments, profiles, speciess = get_sk_fragments(
+                nr_seqs, sk_order_dict[sk], genome_db, minhash_defined,
+                minhash_exists, 10_000_000, None, args.nonalph_cutoff, thread_nr)
         print(
             f'{len(fragments)} fragments generated, alongside {len(profiles)} '
             'unique profiles')
