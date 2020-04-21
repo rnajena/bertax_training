@@ -66,7 +66,7 @@ def load_bert_model(model_path):
                                    compile=False)
 
 
-def test_pregen_fragments(fragments_dir, nr_seqs=50_000):
+def test_pregen_fragments(fragments_dir, nr_seqs=50_000, outfile='tmp.txt', saveseqs=True):
     x, y = load_fragments(fragments_dir, classes, nr_seqs=nr_seqs)
     model = load_bert_model('output/bert_nc_finetuned.h5')
     y_pred = model.predict(FragmentGenerator(x, y, 502), verbose=1)
@@ -75,8 +75,12 @@ def test_pregen_fragments(fragments_dir, nr_seqs=50_000):
     c_report = classification_report(y_true, y_pred,
                                      target_names=classes)
     print(c_report)
-    with open('bert_nc_toy_finetuned_test_report_50k_2.txt', 'w') as f:
+    with open(outfile, 'w') as f:
         f.write(c_report)
+    if (saveseqs):
+        with open(outfile + '_seqs.fasta', 'w') as f:
+            for xi, yi, ypredi in zip(x, y_true, y_pred):
+                f.write(f'>{classes[yi]}; predicted: {classes[ypredi]}\n{xi}\n')
 
 
 def test_coding_seqs(nr_seqs=10_000, orig_seq_len_nt=None,
@@ -128,9 +132,9 @@ def test_coding_seqs(nr_seqs=10_000, orig_seq_len_nt=None,
     if (saveseqs):
         with open(outfile + '_seqs.fasta', 'w') as f:
             for xi, yi, ypredi in zip(x, y_true, y_pred):
-                f.write(f'>{classes.index(yi)}; predicted: {classes.index(ypredi)}\n{xi}\n')
+                f.write(f'>{classes[yi]}; predicted: {classes[ypredi]}\n{xi}\n')
 
 
 if __name__ == '__main__':
-    test_coding_seqs(1_000, 1500, outfile='bert_nc_toy_finetuned_test_coding_seqs_10k_1500nt.txt', saveseqs=True)
-    # test_pregen_fragments('output/genomic_fragments')
+    # test_coding_seqs(10_000, 1500, outfile='bert_nc_toy_finetuned_test_coding_seqs_10k_1500nt.txt', saveseqs=True)
+    test_pregen_fragments('output/genomic_fragments', 1_000, 'bert_nc_toy_finetuned_test_fragments_1k.txt')
