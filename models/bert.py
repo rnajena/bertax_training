@@ -97,10 +97,12 @@ def run_epoch(filenames, model_function, progress_bar=False):
                          seq_split_generator(seq, min_split, max_split)]
         pairs.extend(zip(*[iter(seq_sentences)]*2))
         if (len(pairs) >= batch_size):
-            metrics = train_batch(pairs)
-            pairs = []
+            metrics = train_batch(pairs[:batch_size])
+            pairs = pairs[batch_size:]
     if (len(pairs) > 0):
-        metrics = train_batch(pairs)
+        for chunk in [pairs[i:i + batch_size]
+                      for i in range(0, len(pairs), batch_size)]:
+            metrics = train_batch(chunk)
     return metrics
 
 
