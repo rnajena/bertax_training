@@ -88,37 +88,37 @@ def parse_arguments():
                         default=PARAMS['data']['file_names_cache'][1])
     parser.add_argument('--no_progress_bar', help=' ', action='store_true')
     parser.add_argument('--no_balance', help=' ', action='store_true')
-    parser.add_argument('--epochs', help=' ', default=15)            # default
-    parser.add_argument('--batch_size', default=256,
+    parser.add_argument('--epochs', help=' ', type=int, default=15)            # default
+    parser.add_argument('--batch_size', type=int, default=256,
                         help='decrease this for lower memory consumption')
-    parser.add_argument('--val_split', help=' ', default=0.005)
+    parser.add_argument('--val_split', help=' ', type=float, default=0.005)
 
     # sentence splits
     # chosen to correspond to average protein domain lengths
-    parser.add_argument('--min_split', help=' ', default=50)
-    parser.add_argument('--max_split', help=' ', default=250)
+    parser.add_argument('--min_split', help=' ', type=int, default=50)
+    parser.add_argument('--max_split', help=' ', type=int, default=250)
 
     # bert parameters
     # BERT_BASE (L=12, H=768, A=12)
-    parser.add_argument('--seq_len', default=512,
+    parser.add_argument('--seq_len', default=512, type=int,
                         help='should be at least `max_split`*2 + 2')
-    parser.add_argument('--head_num', default=12,
+    parser.add_argument('--head_num', default=12, type=int,
                         help='=:A; BERT_BASE: 12, BERT_A: 5')
-    parser.add_argument('--transformer_num', default=12,
+    parser.add_argument('--transformer_num', default=12, type=int,
                         help='=:L; BERT_BASE: 12, BERT_A: 12')
-    parser.add_argument('--embed_dim', default=768,
+    parser.add_argument('--embed_dim', default=768, type=int,
                         help='=:H; BERT_BASE: 768, BERT_A: 25; '
                         'has to be dividable by A')
-    parser.add_argument('--feed_forward_dim', default=3072,
+    parser.add_argument('--feed_forward_dim', default=3072, type=int,
                         help='BERT_BASE: 3072, BERT_A: 100')
-    parser.add_argument('--dropout_rate', default=0.1,
+    parser.add_argument('--dropout_rate', default=0.1, type=float,
                         help='BERT_BASE: 0.1, BERT_A: 0.05')
-    parser.add_argument('--nr_seqs', default=250_000,
+    parser.add_argument('--nr_seqs', default=250_000, type=int,
                         help='nr of sequences to use per class')
     parser.add_argument('--classes', help=' ', default=PARAMS['data']['classes'][1])
     parser.add_argument('--alphabet', help=' ', default=ALPHABET)
-    parser.add_argument('--k', help=' ', default=3)
-    parser.add_argument('--stride', help=' ', default=3)
+    parser.add_argument('--k', help=' ', default=3 type=int)
+    parser.add_argument('--stride', help=' ', type=int, default=3)
     args = parser.parse_args()
     args.pos_num = args.seq_len
     return args

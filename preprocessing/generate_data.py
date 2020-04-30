@@ -283,8 +283,9 @@ class BatchGenerator(Sequence):
         batch_x = [self.get_seq(file_name) for file_name in batch_filenames]
         batch_y = np.array([class_vectors[label] for label in batch_labels])
         if (self.process_batch_function is not None):
-            batch_x = self.process_batch_function(batch_x)
-        result = (np.array(batch_x), batch_y)
+            result = (self.process_batch_function(batch_x), batch_y)
+        else:
+            result = (np.array(batch_x), batch_y)
         if (self.cache):
             if (self.cache_seq_limit is not None
                 and len(self.cached) * self.batch_size

@@ -13,27 +13,26 @@ def parse_arguments():
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
         description='')
     parser.add_argument('pretrained_path', help='pretrained model to finetune')
-    parser.add_argument('--nr_seqs', default=250_000,
+    parser.add_argument('--nr_seqs', default=250_000, type=int,
                         help='nr of sequences to use per class')
-    parser.add_argument('--epochs', default=3,
+    parser.add_argument('--epochs', default=3, type=int,
                         help='BERT paper recommendations: 2, 3, 4')
-    parser.add_argument('--batch_size', default=32,
+    parser.add_argument('--batch_size', default=32, type=int,
                         help='BERT paper recommendations: 16, 32')
-    parser.add_argument('--learning_rate', default=5e-5,
+    parser.add_argument('--learning_rate', default=5e-5, type=float,
                         help='BERT paper recommendations: 5e-5, 3e-5, 2e-5')
     parser.add_argument('--root_fa_dir', help=' ',
                         default=PARAMS['data']['root_fa_dir'][1])
     parser.add_argument('--from_cache', help=' ',
                         default=PARAMS['data']['file_names_cache'][1])
     parser.add_argument('--no_balance', help=' ', action='store_true')
-    parser.add_argument('--val_split', help=' ', default=0.05)
-    parser.add_argument('--test_split', help=' ', default=0.2)
+    parser.add_argument('--val_split', help=' ', default=0.05, type=float)
+    parser.add_argument('--test_split', help=' ', default=0.2, type=float)
     parser.add_argument('--classes', help=' ', default=PARAMS['data']['classes'][1])
     parser.add_argument('--alphabet', help=' ', default=ALPHABET)
-    parser.add_argument('--k', help=' ', default=3)
-    parser.add_argument('--stride', help=' ', default=3)
+    parser.add_argument('--k', help=' ', default=3, type=int)
+    parser.add_argument('--stride', help=' ', default=3, type=int)
     args = parser.parse_args()
-    args.pos_num = args.seq_len
     return args
 
 
