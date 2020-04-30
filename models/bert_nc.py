@@ -1,19 +1,15 @@
-if __name__ == '__main__' and __package__ is None:
-    from os import sys, path
-    sys.path.append(path.dirname(path.dirname(path.abspath(__file__))))
 import numpy as np
 import json
 import os.path
 from random import shuffle
 from sklearn.model_selection import train_test_split
 from preprocessing.process_inputs import seq2kmers, ALPHABET
-from keras_bert import get_base_dict, get_model, compile_model
+from keras_bert import get_model, compile_model
 from keras_bert import gen_batch_inputs
-from argparse import ArgumentParser
-from itertools import product
+import argparse
 from keras.callbacks import ModelCheckpoint
 from keras.utils import Sequence
-from logging import warning
+from models.bert_utils import get_token_dict
 
 
 def load_fragments(fragments_dir, shuffle_=True):
@@ -49,31 +45,22 @@ class FragmentGenerator(Sequence):
                                 seq_len=self.seq_len)
 
 
-def get_token_dict(alph=ALPHABET, k=3):
-    token_dict = get_base_dict()
-    for word in [''.join(_) for _ in product(ALPHABET, repeat=k)]:
-        token_dict[word] = len(token_dict)
-    return token_dict
-
-
 if __name__ == '__main__':
-    parser = ArgumentParser(
+    parser = argparse.ArgumentParser(
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
         description='pre-train BERT on pre-generated fragments')
     parser.add_argument('fragments_dir')
-    parser.add_argument('--seq_len', type=int, default=502)
-    parser.add_argument('--batch_size', type=int, default=70)
-    parser.add_argument('--val_split', type=float, default=0.02)
-    parser.add_argument('--head_num', type=int, default=12)
-    parser.add_argument('--transformer_num', type=int, default=12)
-    parser.add_argument('--embed_dim', type=int, default=768)
-    parser.add_argument('--feed_forward_dim', type=int, default=3072)
-    parser.add_argument('--dropout_rate', type=float, default=0.1)
-    parser.add_argument('--epochs', type=int, default=50)
-    parser.add_argument('--name', type=str, default='bert_nc')
+    parser.add_argument('--seq_len', help=' ', type=int, default=502)
+    parser.add_argument('--batch_size', help=' ', type=int, default=70)
+    parser.add_argument('--val_split', help=' ', type=float, default=0.02)
+    parser.add_argument('--head_num', help=' ', type=int, default=12)
+    parser.add_argument('--transformer_num', help=' ', type=int, default=12)
+    parser.add_argument('--embed_dim', help=' ', type=int, default=768)
+    parser.add_argument('--feed_forward_dim', help=' ', type=int, default=3072)
+    parser.add_argument('--dropout_rate', help=' ', type=float, default=0.1)
+    parser.add_argument('--epochs', help=' ', type=int, default=50)
+    parser.add_argument('--name', help=' ', type=str, default='bert_nc')
     args = parser.parse_args()
-    # args = parser.parse_args(['/home/lo63tor/master/dna_class/output/genomic_fragments/',
-    #                           '--seq_len', '502', '--batch_size', '70', '--head_num', '2',
-    #                           '--transformer_num', '2', '--embed_dim', '10', '--epochs', '3'])
     batch_size = args.batch_size
     # building model
     token_dict = get_token_dict(ALPHABET, k=3)
@@ -94,7 +81,7 @@ if __name__ == '__main__':
     f_train, f_val = train_test_split(fragments, test_size=args.val_split)
     # f_train = [''.join(random_words(10)) for i in range(100)]
     # f_val = [''.join(random_words(10)) for i in range(10)]
-    model.fit_generator(
+    model.fit(
         generator=FragmentGenerator(f_train, args.seq_len),
         epochs=args.epochs,
         validation_data=FragmentGenerator(f_val, args.seq_len),

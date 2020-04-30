@@ -1,15 +1,24 @@
 import keras
 import keras_bert
-from preprocessing.process_inputs import seq2kmers
+from preprocessing.process_inputs import seq2kmers, ALPHABET
 from random import randint
-from logging import error
 import numpy as np
+from itertools import product
 
 # NOTE: uses just keras (instead of tensorflow.keras). Otherwise
 # loading of the pre-trained model is likely to fail
 
 
+def get_token_dict(alph=ALPHABET, k=3):
+    """get token dictionary dict generated from `alph` and `k`"""
+    token_dict = keras_bert.get_base_dict()
+    for word in [''.join(_) for _ in product(alph, repeat=k)]:
+        token_dict[word] = len(token_dict)
+    return token_dict
+
+
 def generate_bert_with_pretrained(pretrained_path, nr_classes=4):
+    """get model ready for fine-tuning and the maximum input length"""
     # see https://colab.research.google.com/github/CyberZHG/keras-bert
     # /blob/master/demo/tune/keras_bert_classification_tpu.ipynb
     custom_objects = {'GlorotNormal': keras.initializers.glorot_normal,
@@ -22,7 +31,7 @@ def generate_bert_with_pretrained(pretrained_path, nr_classes=4):
     softmax_layer = keras.layers.Dense(nr_classes, activation='softmax')(
         nsp_dense_layer)
     model_fine = keras.Model(inputs=inputs, outputs=softmax_layer)
-    return model_fine
+    return model_fine, inputs[0].shape[1]
 
 
 def seq2tokens(seq, token_dict, max_length=250,
@@ -38,16 +47,10 @@ def seq2tokens(seq, token_dict, max_length=250,
     else:
         start = 0
         end = len(seq)
-    word_indices = []
-    for word in seq[start:end]:
-        try:
-            index = token_dict[word]
-        except KeyError:
-            error(f'sequence {seq} contains unknown word {word}. '
-                  'This shouldn\'t happen, check the sequence!')
-            index = token_dict['[UNK]']
-        word_indices.append(index)
-    indices = [token_dict['[CLS]']] + word_indices
+    indices = [token_dict['[CLS]']] + [token_dict[word]
+                                       if word in token_dict
+                                       else token_dict['[UNK]']
+                                       for word in seq[start:end]]
     if (len(indices) < max_length):
         indices += [token_dict['']] * (max_length - len(indices))
     else:

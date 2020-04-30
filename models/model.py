@@ -322,7 +322,7 @@ class DCModel:
     def generate_bert_with_pretrained(self, pretrained_path, **ignored_kwargs):
         from models.bert_utils import generate_bert_with_pretrained
         self.model = generate_bert_with_pretrained(pretrained_path,
-                                                   len(self.classes))
+                                                   len(self.classes))[0]
         self._model_visualization()
 
     def train(self, train_generator: Sequence,
