@@ -11,5 +11,5 @@ if __name__ == '__main__':
     species_list = [line.strip() for line in
                     open(args.species_txt).readlines()]
     assert len(fragments) == len(species_list)
-    for fragment, species in zip(fragments, species_list):
-        print(f'>{species}\n{fragment}')
+    for i, (fragment, species) in enumerate(zip(fragments, species_list)):
+        print(f'>{species} {i}\n{fragment}')
