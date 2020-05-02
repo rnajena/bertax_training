@@ -8,6 +8,7 @@ from models.bert_utils import get_token_dict
 from models.model import PARAMS
 from tqdm import tqdm
 import argparse
+import time
 
 
 def opt_split(n, min_, max_):
@@ -74,7 +75,8 @@ def log(*messages):
     global log_file
     print(*messages)
     with open(log_file, 'a') as f:
-        f.write(f'[{time.strftime("%x %X")}]\t" ".join(messages)\n')
+        msg = ', '.join([str(m) for m in messages])
+        f.write(f'[{time.strftime("%x %X")}]\t{msg}\n')
 
 
 def parse_arguments():
@@ -117,7 +119,7 @@ def parse_arguments():
                         help='nr of sequences to use per class')
     parser.add_argument('--classes', help=' ', default=PARAMS['data']['classes'][1])
     parser.add_argument('--alphabet', help=' ', default=ALPHABET)
-    parser.add_argument('--k', help=' ', default=3 type=int)
+    parser.add_argument('--k', help=' ', default=3, type=int)
     parser.add_argument('--stride', help=' ', type=int, default=3)
     args = parser.parse_args()
     args.pos_num = args.seq_len
@@ -153,6 +155,7 @@ if __name__ == '__main__':
     log('split done')
     files_train = split.get_train_files()[0]
     files_val = split.get_test_files()[0]
+    start_time = time.time()
     for i in range(args.epochs):
         log(f'=== Epoch {i+1:2}/{args.epochs} ===')
         log('training')
@@ -165,4 +168,5 @@ if __name__ == '__main__':
         log('validating')
         metrics = run_epoch(files_val, model.test_on_batch)
         log('validation metrics', metrics)
+    log(f'training finished in {(time.time() - start_time) / 3600:.2f}h')
     model.save(f'{args.name}_trained.h5')
