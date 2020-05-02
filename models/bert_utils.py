@@ -34,6 +34,16 @@ def generate_bert_with_pretrained(pretrained_path, nr_classes=4):
     return model_fine, inputs[0].shape[1]
 
 
+def load_finetuned_bert(model_path):
+    """get finetuned model from path and the maximum input length"""
+    custom_objects = {'GlorotNormal': keras.initializers.glorot_normal,
+                      'GlorotUniform': keras.initializers.glorot_uniform}
+    custom_objects.update(keras_bert.get_custom_objects())
+    model = keras.models.load_model(model_path, compile=False,
+                                    custom_objects=custom_objects)
+    return model, model.inputs[0].shape[1]
+
+
 def seq2tokens(seq, token_dict, max_length=250,
                k=3, stride=3, window=True):
     """transforms raw sequence into list of tokens to be used for

@@ -4,6 +4,7 @@ from preprocessing.generate_data import DataSplit
 from models.model import PARAMS
 from models.bert_utils import get_token_dict, generate_bert_with_pretrained
 from models.bert_utils import seq2tokens, process_bert_tokens_batch
+from models.bert_utils import load_finetuned_bert
 import argparse
 from os.path import splitext
 
@@ -13,6 +14,8 @@ def parse_arguments():
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
         description='')
     parser.add_argument('pretrained_path', help='pretrained model to finetune')
+    parser.add_argument('--finetuned', help='provided model is already adapted'
+                        ' to being finetuned', action='store_true')
     parser.add_argument('--nr_seqs', default=250_000, type=int,
                         help='nr of sequences to use per class')
     parser.add_argument('--epochs', default=3, type=int,
@@ -38,8 +41,11 @@ def parse_arguments():
 
 if __name__ == '__main__':
     args = parse_arguments()
-    model_fine, max_length = generate_bert_with_pretrained(
-        args.pretrained_path, len(args.classes))
+    if (not args.finetuned):
+        model_fine, max_length = generate_bert_with_pretrained(
+            args.pretrained_path, len(args.classes))
+    else:
+        model_fine, max_length = load_finetuned_bert(args.pretrained_path)
     model_fine.summary()
     model_fine.compile(keras.optimizers.Adam(args.learning_rate),
                        loss='categorical_crossentropy',
@@ -61,7 +67,8 @@ if __name__ == '__main__':
         enc_k=args.k, enc_stride=args.stride)
     model_fine.fit(train_g, validation_data=val_g,
                    epochs=args.epochs)
-    model_fine.save(splitext(args.pretrained_path)[0] + '_finetuned.h5')
+    file_suffix = '_finetuned.5' if (not args.finetuned) else '_plus.h5'
+    model_fine.save(splitext(args.pretrained_path)[0] + file_suffix)
     print('testing...')
     result = model_fine.evaluate(test_g)
     print(result)
