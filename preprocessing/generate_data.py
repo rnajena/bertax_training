@@ -93,8 +93,8 @@ class DataSplit:
                         self.file_names += [f'{_}${self.duplicate_data}'
                                             for _ in self.file_names]
                         self.labels *= 2
-                    self.file_names = [os.path.join(self.root_fa_dir, f)
-                                       for f in self.file_names]
+                    # self.file_names = [os.path.join(self.root_fa_dir, f)
+                    #                    for f in self.file_names]
             else:
                 with open(from_cache, 'rb') as f:
                     info('reading in cached file names')
