@@ -1,14 +1,13 @@
 """Library for various sequence preprocessing/encoding functions"""
 
-import os
+
 from Bio import SeqIO
 from tqdm import tqdm
 from numpy import floor, ceil, where, array
 from random import randint
-import pickle
 
-# ALPHABET = 'ACGT'
-ALPHABET = 'GALMFWKQESPVICYHRNDTUOBZX'
+
+ALPHABET = 'ACGT'
 
 ##############
 # IO + Utils #
@@ -32,17 +31,6 @@ def read_seq(file_name):
                       if not line.startswith('>'))
     return seq
 
-def read_seq_ssd_version(root_fa_dir, file_query):
-    """
-    1. open pkl file
-    2. search in dict for file
-    3. reads everything (except header(s)) in fasta file as one sequence
-    """
-    file_name, seq_name = file_query
-    file = pickle.load(open(os.path.join(root_fa_dir, file_name), "rb"))
-    seq = ''.join(line.strip() for line in file[seq_name].split("\n")
-                  if not line.startswith('>'))
-    return seq
 
 def read_headers(fasta_in):
     with open(fasta_in) as f:
@@ -71,7 +59,7 @@ def seq2kmers(seq, k=3, stride=3, pad=True, to_upper=True):
     If specified, end will be padded so no character is lost"""
     if (k == 1 and stride == 1):
         # for performance reasons
-        return list(seq)
+        return seq
     kmers = []
     for i in range(0, len(seq) - k + 1, stride):
         kmer = seq[i:i+k]
