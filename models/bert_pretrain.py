@@ -1,6 +1,5 @@
-from keras_bert import get_base_dict, get_model, compile_model
+from keras_bert import get_model, compile_model
 from keras_bert import gen_batch_inputs
-from itertools import product
 from math import ceil
 from preprocessing.process_inputs import ALPHABET, read_seq, seq2kmers
 from preprocessing.generate_data import DataSplit
@@ -71,6 +70,7 @@ def run_epoch(filenames, model_function, progress_bar=False):
             metrics = train_batch(chunk)
     return metrics
 
+
 def log(*messages):
     global log_file
     print(*messages)
@@ -90,7 +90,7 @@ def parse_arguments():
                         default=PARAMS['data']['file_names_cache'][1])
     parser.add_argument('--no_progress_bar', help=' ', action='store_true')
     parser.add_argument('--no_balance', help=' ', action='store_true')
-    parser.add_argument('--epochs', help=' ', type=int, default=15)            # default
+    parser.add_argument('--epochs', help=' ', type=int, default=15)
     parser.add_argument('--batch_size', type=int, default=256,
                         help='decrease this for lower memory consumption')
     parser.add_argument('--val_split', help=' ', type=float, default=0.005)
@@ -117,7 +117,8 @@ def parse_arguments():
                         help='BERT_BASE: 0.1, BERT_A: 0.05')
     parser.add_argument('--nr_seqs', default=250_000, type=int,
                         help='nr of sequences to use per class')
-    parser.add_argument('--classes', help=' ', default=PARAMS['data']['classes'][1])
+    parser.add_argument('--classes', help=' ', nargs='+',
+                        default=PARAMS['data']['classes'][1])
     parser.add_argument('--alphabet', help=' ', default=ALPHABET)
     parser.add_argument('--k', help=' ', default=3, type=int)
     parser.add_argument('--stride', help=' ', type=int, default=3)
