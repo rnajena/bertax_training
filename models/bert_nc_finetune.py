@@ -5,7 +5,7 @@ from models.model import PARAMS
 import numpy as np
 from keras.utils import Sequence
 from models.bert_utils import get_token_dict, seq2tokens, generate_bert_with_pretrained
-from random import shuffle
+from random import shuffle, sample
 from sklearn.model_selection import train_test_split
 import os.path
 import argparse
@@ -14,18 +14,30 @@ import argparse
 classes = PARAMS['data']['classes'][1]
 
 
-def load_fragments(fragments_dir, shuffle_=True):
+def load_fragments(fragments_dir, shuffle_=True, balance=True, nr_seqs=None):
+    fragments = []
+    for class_ in classes:
+        fragments.append((class_, json.load(open(os.path.join(
+            fragments_dir, f'{class_}_fragments.json')))))
+    nr_seqs_max = min(len(_[1]) for _ in fragments)
+    if (nr_seqs is None or nr_seqs > nr_seqs_max):
+        nr_seqs = nr_seqs_max
     x = []
     y = []
-    for class_ in classes:
-        for fragment in json.load(open(os.path.join(
-                fragments_dir, f'{class_}_fragments.json'))):
-            x.append(fragment)
-            y.append(class_)
+    for class_, class_fragments in fragments:
+        if not balance:
+            x.extend(class_fragments)
+            y.extend([class_] * len(class_fragments))
+        else:
+            x.extend(sample(class_fragments, nr_seqs))
+            y.extend([class_] * nr_seqs)
+    assert len(x) == len(y)
     if (shuffle_):
         to_shuffle = list(zip(x, y))
         shuffle(to_shuffle)
         x, y = zip(*to_shuffle)
+    print(f'{len(x)} fragments loaded in total; '
+          f'balanced={balance}, shuffle_={shuffle_}, nr_seqs={nr_seqs}')
     return x, y
 
 
