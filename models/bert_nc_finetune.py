@@ -1,6 +1,6 @@
 import keras
 import json
-from preprocessing.process_inputs import seq2kmers, get_class_vectors, ALPHABET
+from preprocessing.process_inputs import get_class_vectors, ALPHABET
 from models.model import PARAMS
 import numpy as np
 from keras.utils import Sequence
@@ -9,6 +9,8 @@ from random import shuffle, sample
 from sklearn.model_selection import train_test_split
 import os.path
 import argparse
+from dataclasses import dataclass, field
+from typing import List
 
 
 classes = PARAMS['data']['classes'][1]
@@ -41,33 +43,34 @@ def load_fragments(fragments_dir, shuffle_=True, balance=True, nr_seqs=None):
     return x, y
 
 
+@dataclass
 class FragmentGenerator(Sequence):
+    x: list
+    y: list
+    seq_len: int
+    k: int = 3
+    stride: int = 3
+    batch_size: int = 32
+    classes: List = field(default_factory=lambda:
+                          ['Viruses', 'Archaea', 'Bacteria', 'Eukaryota'])
 
-    def __init__(self, x, y, seq_len):
-        global classes
-        self.x = x
-        self.y = y
-        self.seq_len = seq_len
-        self.class_vectors = get_class_vectors(classes)
+    def __post_init__(self):
+        self.class_vectors = get_class_vectors(self.classes)
+        self.token_dict = get_token_dict(ALPHABET, k=3)
 
     def __len__(self):
-        global batch_size
         return np.ceil(len(self.x)
-                       / float(batch_size)).astype(np.int)
+                       / float(self.batch_size)).astype(np.int)
 
     def __getitem__(self, idx):
-        global token_dict
-        batch_fragments = self.x[idx * batch_size:
-                                 (idx + 1) * batch_size]
-        batch_classes = self.y[idx * batch_size:
-                               (idx + 1) * batch_size]
+        batch_fragments = self.x[idx * self.batch_size:
+                                 (idx + 1) * self.batch_size]
+        batch_classes = self.y[idx * self.batch_size:
+                               (idx + 1) * self.batch_size]
         batch_y = np.array([self.class_vectors[c] for c in batch_classes])
-        batch_seqs = [seq2kmers(seq, k=3, stride=3, pad=False, to_upper=True)
-                      for seq in batch_fragments]
-        batch_x = []
-        for seq in batch_seqs:
-            batch_x.append(seq2tokens(seq, token_dict, self.seq_len,
-                                      window=False))
+        batch_x = [seq2tokens(seq, self.token_dict, self.seq_len,
+                              k=self.k, stride=self.stride, window=False)
+                   for seq in batch_fragments]
         return ([np.array([_[0] for _ in batch_x]),
                 np.array([_[1] for _ in batch_x])], batch_y)
 
@@ -94,9 +97,7 @@ if __name__ == '__main__':
     parser.add_argument('--nr_seqs', help=' ', type=int, default=250_000)
     parser.add_argument('--learning_rate', help=' ', type=float, default=5e-5)
     args = parser.parse_args()
-    batch_size = args.batch_size
     learning_rate = args.learning_rate
-    token_dict = get_token_dict(ALPHABET, k=3)
     # building model
     model, max_length = get_fine_model(args.pretrained_bert)
     model.summary()
@@ -107,10 +108,13 @@ if __name__ == '__main__':
     f_train_x, f_val_x, f_train_y, f_val_y = train_test_split(
         f_train_x, f_train_y, test_size=0.05)
     model.fit(
-        FragmentGenerator(f_train_x, f_train_y, max_length),
+        FragmentGenerator(f_train_x, f_train_y, max_length,
+                          batch_size=args.batch_size),
         epochs=args.epochs,
-        validation_data=FragmentGenerator(f_val_x, f_val_y, max_length))
+        validation_data=FragmentGenerator(f_val_x, f_val_y, max_length,
+                                          batch_size=args.batch_size))
     model.save(os.path.splitext(args.pretrained_bert)[0] + '_finetuned.h5')
     print('testing...')
-    result = model.evaluate(FragmentGenerator(f_test_x, f_test_y, max_length))
+    result = model.evaluate(FragmentGenerator(f_test_x, f_test_y, max_length,
+                                              batch_size=args.batch_size))
     print(result)
