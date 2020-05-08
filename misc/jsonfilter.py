@@ -55,3 +55,9 @@ def nondefaults(params):
         if (k not in PARAMS_flat or PARAMS_flat[k][1] != v):
             to_ret[k] = (v, PARAMS_flat[k][1] if k in PARAMS_flat else None)
     return to_ret
+
+
+def format2script(params):
+    return(' '.join([f'--{k} {v[0]}' for k, v in params.items()
+                     if k not in ['type', 'verbose', 'grid', 'summary',
+                                  'model_name']]))

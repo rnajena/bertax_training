@@ -388,7 +388,7 @@ class DCModel:
             return
         results['name'] = self.name
         with open(filename, 'w') as f:
-            json.dump(results, f)
+            json.dump(results, f, indent=2)
 
 
 def cnn(epochs=200, early_stopping=True,
