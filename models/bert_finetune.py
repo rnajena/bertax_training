@@ -30,6 +30,7 @@ def parse_arguments():
     parser.add_argument('--from_cache', help=' ',
                         default=PARAMS['data']['file_names_cache'][1])
     parser.add_argument('--no_balance', help=' ', action='store_true')
+    parser.add_argument('--repeated_undersampling', help=' ', action='store_true')
     parser.add_argument('--val_split', help=' ', default=0.05, type=float)
     parser.add_argument('--test_split', help=' ', default=0.2, type=float)
     parser.add_argument('--classes', help=' ', default=PARAMS['data']['classes'][1])
@@ -56,7 +57,8 @@ if __name__ == '__main__':
     split = DataSplit(root_fa_dir=args.root_fa_dir, nr_seqs=args.nr_seqs,
                       classes=args.classes, from_cache=args.from_cache,
                       train_test_split=args.test_split,
-                      val_split=args.val_split, balance=not args.no_balance)
+                      val_split=args.val_split, balance=not args.no_balance,
+                      repeated_undersampling=args.repeated_undersampling)
 
     def custom_encode_sequence(seq):
         return seq2tokens(seq, token_dict, max_length=max_length, window=True,
@@ -78,7 +80,7 @@ if __name__ == '__main__':
     callbacks_list = [checkpoint1, checkpoint2, checkpoint3]
 
     try:
-        model_fine.fit(train_g, validation_data=val_g,callbacks=callbacks_list,verbose=2,
+        model_fine.fit(train_g, validation_data=val_g,callbacks=callbacks_list,verbose=1,
                        epochs=args.epochs)
     except (KeyboardInterrupt):
         print("training interrupted, current status will be saved and tested, press ctrl+c to cancel this")
