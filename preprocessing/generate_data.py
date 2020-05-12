@@ -225,7 +225,7 @@ class DataSplit:
                       max_seq_len=10_000, force_max_len=True, cache=False,
                       cache_seq_limit=None, w2vfile=None,
                       custom_encode_sequence=None,
-                      process_batch_function=None,root_fa_dir=None) -> tuple:
+                      process_batch_function=None) -> tuple:
         kwargs = {'classes': self.classes, 'batch_size': batch_size,
                   'rev_comp': rev_comp, 'rev_comp_mode': rev_comp_mode,
                   'fixed_size_method': fixed_size_method,
@@ -235,7 +235,7 @@ class DataSplit:
                   'cache': cache, 'cache_seq_limit': cache_seq_limit,
                   'w2vfile': w2vfile,
                   'custom_encode_sequence': custom_encode_sequence,
-                  'process_batch_function': process_batch_function, 'root_fa_dir': root_fa_dir}
+                  'process_batch_function': process_batch_function}
         info('splitting to train,test and validation data generators')
         split_seqs_nr = {p: self.ranges[p][1] - self.ranges[p][0] + 1
                          for p in self.ranges}
@@ -267,7 +267,6 @@ class BatchGenerator(Sequence):
     w2vfile: Optional[str] = None
     custom_encode_sequence: Optional[Callable[[str], list]] = None
     process_batch_function: Optional[Callable[[list], list]] = None
-    root_fa_dir: Optional[str] = None
 
     def __post_init__(self):
         if (not self.force_max_len):
