@@ -7,6 +7,7 @@ from models.bert_utils import seq2tokens, process_bert_tokens_batch
 from models.bert_utils import load_finetuned_bert
 import argparse
 from os.path import splitext
+from keras.callbacks import ModelCheckpoint, TensorBoard, EarlyStopping
 
 
 def parse_arguments():
@@ -29,6 +30,7 @@ def parse_arguments():
     parser.add_argument('--from_cache', help=' ',
                         default=PARAMS['data']['file_names_cache'][1])
     parser.add_argument('--no_balance', help=' ', action='store_true')
+    parser.add_argument('--repeated_undersampling', help=' ', action='store_true')
     parser.add_argument('--val_split', help=' ', default=0.05, type=float)
     parser.add_argument('--test_split', help=' ', default=0.2, type=float)
     parser.add_argument('--classes', help=' ', default=PARAMS['data']['classes'][1])
@@ -55,7 +57,8 @@ if __name__ == '__main__':
     split = DataSplit(root_fa_dir=args.root_fa_dir, nr_seqs=args.nr_seqs,
                       classes=args.classes, from_cache=args.from_cache,
                       train_test_split=args.test_split,
-                      val_split=args.val_split, balance=not args.no_balance)
+                      val_split=args.val_split, balance=not args.no_balance,
+                      repeated_undersampling=args.repeated_undersampling)
 
     def custom_encode_sequence(seq):
         return seq2tokens(seq, token_dict, max_length=max_length, window=True,
@@ -65,10 +68,31 @@ if __name__ == '__main__':
         custom_encode_sequence=custom_encode_sequence,
         process_batch_function=process_bert_tokens_batch,
         enc_k=args.k, enc_stride=args.stride)
-    model_fine.fit(train_g, validation_data=val_g,
-                   epochs=args.epochs)
+
+    # for long run
+    filepath1 = splitext(args.pretrained_path)[0] + "model.best.acc.hdf5"
+    filepath2 = splitext(args.pretrained_path)[0] + "model.best.loss.hdf5"
+    checkpoint1 = ModelCheckpoint(filepath1, monitor='val_accuracy', verbose=1, save_best_only=True,
+                                  save_weights_only=False, mode='max')
+    checkpoint2 = ModelCheckpoint(filepath2, monitor='val_loss', verbose=1, save_best_only=True,
+                                  save_weights_only=False, mode='min')
+    checkpoint3 = EarlyStopping('val_accuracy', min_delta=0, patience=args.epochs // 2, restore_best_weights=True)
+    callbacks_list = [checkpoint1, checkpoint2, checkpoint3]
+
+    try:
+        model_fine.fit(train_g, validation_data=val_g,callbacks=callbacks_list,verbose=1,
+                       epochs=args.epochs)
+    except (KeyboardInterrupt):
+        print("training interrupted, current status will be saved and tested, press ctrl+c to cancel this")
+        file_suffix = '_aborted.hdf5'
+        model_fine.save(splitext(args.pretrained_path)[0] + file_suffix)
+        print('testing...')
+        result = model_fine.evaluate(test_g)
+        print("test results:",*zip(model_fine.metrics_names, result))
+        exit()
+
     file_suffix = '_finetuned.5' if (not args.finetuned) else '_plus.h5'
     model_fine.save(splitext(args.pretrained_path)[0] + file_suffix)
     print('testing...')
     result = model_fine.evaluate(test_g)
-    print(result)
+    print("test results:", *zip(model_fine.metrics_names, result))

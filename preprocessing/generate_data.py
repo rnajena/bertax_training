@@ -17,7 +17,7 @@ from typing import Optional, Callable, List
 from Bio.Seq import Seq
 import itertools
 import re
-
+from sklearn.utils import class_weight as clw
 
 @dataclass
 class DataSplit:
@@ -33,25 +33,31 @@ class DataSplit:
     duplicate_data: Optional[str] = None
     balance: bool = True
     shuffle_: bool = True
+    repeated_undersampling: bool = True
 
     def __post_init__(self):
+        if self.repeated_undersampling:
+            self.balance=False
+
         self.get_fa_files(self.from_cache, self.from_cache_format)
         self.process_fa_files(self.balance, self.shuffle_)
         # files will be split in the order: train, val, test
 
         def abs_range(length, split, offset=0):
             return (offset, offset+np.ceil(length*split).astype(np.int) - 1)
-        self.ranges = {}
-        self.ranges['train'] = abs_range(len(self.labels),
-                                         (1 - self.train_test_split)
-                                         * (1 - self.val_split))
-        self.ranges['val'] = abs_range(len(self.labels),
-                                       (1 - self.train_test_split)
-                                       * self.val_split,
-                                       self.ranges['train'][1] + 1)
-        self.ranges['test'] = abs_range(len(self.labels),
-                                        self.train_test_split,
-                                        self.ranges['val'][1] + 1)
+
+        if not self.repeated_undersampling:
+            self.ranges = {}
+            self.ranges['train'] = abs_range(len(self.labels),
+                                             (1 - self.train_test_split)
+                                             * (1 - self.val_split))
+            self.ranges['val'] = abs_range(len(self.labels),
+                                           (1 - self.train_test_split)
+                                           * self.val_split,
+                                           self.ranges['train'][1] + 1)
+            self.ranges['test'] = abs_range(len(self.labels),
+                                            self.train_test_split,
+                                            self.ranges['val'][1] + 1)
 
     def store_seq_file_names(self, cache_file, mode='json'):
         file_names = []
@@ -135,11 +141,56 @@ class DataSplit:
                 for i in sample(class_indices[c], self.nr_seqs):
                     file_names_b.append(self.file_names[i])
                     labels_b.append(self.labels[i])
+        elif (self.repeated_undersampling):
+            info(f'repeated undersampling of data with {lowest_seq_nr} sequences for each class')
+            # if not wanted to always keep the idices of each sample then I need to arrange data so that all samples in
+            # ranges['val'] and ranges['test'] are balanced and all remaining samples are in ranges['train']
+
+
+            # define val set
+            val_indexes = set()
+            val_indexes_arr = np.array([],dtype=np.int)
+            for c in self.classes:
+                for i in sample(class_indices[c], int(self.nr_seqs*self.val_split)):
+                    val_indexes.add(i)
+                    val_indexes_arr = np.append(val_indexes_arr,i)
+            val_indexes_arr = np.random.permutation(val_indexes_arr)
+
+            # remove all samples used in val set
+            class_indices = {c: [i for i in class_indices[c] if i not in val_indexes] for c in self.classes}
+
+            # define test set
+            test_indexes = set()
+            test_indexes_arr = np.array([],dtype=np.int)
+            for c in self.classes:
+                for i in sample(class_indices[c], int(self.nr_seqs*self.train_test_split)):
+                    test_indexes.add(i)
+                    test_indexes_arr = np.append(test_indexes_arr, i)
+            test_indexes_arr = np.random.permutation(test_indexes_arr)
+
+            # remove all samples used in val set
+            class_indices = {c: [i for i in class_indices[c] if i not in test_indexes] for c in self.classes}
+
+            train_indexes_arr = np.array([],dtype=np.int)
+            for c in self.classes:
+                train_indexes_arr = np.append(train_indexes_arr, class_indices[c])
+            train_indexes_arr = np.random.permutation(train_indexes_arr)
+
+            indexes = [j for i in [train_indexes_arr, val_indexes_arr, test_indexes_arr] for j in i]
+            self.file_names = [self.file_names[i] for i in indexes]
+            self.labels = [self.labels[i] for i in indexes]
+
+            self.ranges = {}
+            self.ranges['train'] = (0,len(train_indexes_arr))
+            self.ranges['val'] = (self.ranges['train'][1],self.ranges['train'][1]+len(val_indexes_arr))
+            self.ranges['test'] = (self.ranges['val'][1],self.ranges['val'][1]+len(test_indexes_arr))
+            return
         else:
             file_names_b = self.file_names
             labels_b = self.labels
         if (not shuffle_):
             return
+        # TODO shuffle can lead to unbalanced classes due to later sliceing
         # shuffle lists
         info('shuffling data')
         to_shuffle = list(zip(file_names_b, labels_b))
@@ -151,6 +202,7 @@ class DataSplit:
         file_names = self.file_names[data_range[0]: data_range[1] + 1]
         labels = self.labels[data_range[0]: data_range[1] + 1]
         # add remainig unused data
+        # TODO does not work cause in process_fa_files self.labels is trimmed
         last_test_index = self.ranges['test'][1]
         if (last_test_index < len(self.labels) - 1):
             file_names.extend(self.file_names[last_test_index + 1:])
@@ -219,9 +271,14 @@ class BatchGenerator(Sequence):
     def __post_init__(self):
         if (not self.force_max_len):
             raise Exception('not supported anymore')
-            # info('determine max seq length')
-            # self.det_max_seq_len()
         self.cached = {}
+
+        self.samples = {}
+        for c in self.classes:
+            self.samples.update({c: [index for index, i in enumerate(self.labels) if i == c]})
+        self.number_samples_per_class_to_pick = min([len(i) for class_i, i in self.samples.items()])
+
+        self.on_epoch_end()
 
     def get_rev_comp(seq):
         return str(Seq(seq).reverse_complement())
@@ -268,14 +325,14 @@ class BatchGenerator(Sequence):
             **method_kwargs))
 
     def __len__(self):
-        return np.ceil(len(self.file_names) /
-                       float(self.batch_size)).astype(np.int)
+        # old version does count all samples available rather than only samples used in epoch
+        # return np.ceil(len(self.file_names) /
+        #                float(self.batch_size)).astype(np.int)
+        return int(np.floor(len(self.list_IDs) / self.batch_size))
 
     def __getitem__(self, idx):
-        batch_filenames = self.file_names[idx * self.batch_size:
-                                          (idx+1) * self.batch_size]
-        batch_labels = self.labels[idx * self.batch_size:
-                                   (idx+1) * self.batch_size]
+        batch_filenames = [self.file_names[i] for i in self.list_IDs[idx * self.batch_size:(idx+1) * self.batch_size]]
+        batch_labels = [self.labels[i] for i in self.list_IDs[idx * self.batch_size:(idx+1) * self.batch_size]]
 
         class_vectors = get_class_vectors(self.classes)
         if (self.cache and idx in self.cached):
@@ -293,6 +350,26 @@ class BatchGenerator(Sequence):
                 self.cached[idx] = result
         return result
 
+
+    def on_epoch_end(self):
+        'make X-train sample list'
+        """
+        1. go over each class
+        2. select randomly #n_sample samples of each class
+        3. add selection list to dict with class as key
+        4. make list containing indeces for samples in self.file_names   
+        """
+
+        # TODO erstelle dict mit classen und ids
+
+        self.list_IDs = np.array([],dtype=np.int)
+        # self.labels = np.array([])
+        for class_i in self.classes:
+            samples_class_i = sample(self.samples[class_i], self.number_samples_per_class_to_pick)
+            self.list_IDs = np.append(self.list_IDs,samples_class_i)
+
+        'Updates indexes after each epoch'
+        self.list_IDs = np.random.permutation(self.list_IDs)
 
 @dataclass
 class FragmentGenerator(Sequence):
