@@ -4,7 +4,7 @@ from preprocessing.generate_data import DataSplit
 from models.model import PARAMS
 from models.bert_utils import get_token_dict, generate_bert_with_pretrained
 from models.bert_utils import seq2tokens, process_bert_tokens_batch
-from models.bert_utils import load_finetuned_bert
+from models.bert_utils import load_bert
 import argparse
 from os.path import splitext
 from keras.callbacks import ModelCheckpoint, TensorBoard, EarlyStopping
@@ -44,10 +44,11 @@ def parse_arguments():
 if __name__ == '__main__':
     args = parse_arguments()
     if (not args.finetuned):
-        model_fine, max_length = generate_bert_with_pretrained(
+        model_fine = generate_bert_with_pretrained(
             args.pretrained_path, len(args.classes))
     else:
-        model_fine, max_length = load_finetuned_bert(args.pretrained_path)
+        model_fine = load_bert(args.pretrained_path)
+    max_length = model_fine.input_shape[0][1]
     model_fine.summary()
     model_fine.compile(keras.optimizers.Adam(args.learning_rate),
                        loss='categorical_crossentropy',
@@ -61,7 +62,7 @@ if __name__ == '__main__':
                       repeated_undersampling=args.repeated_undersampling)
 
     def custom_encode_sequence(seq):
-        return seq2tokens(seq, token_dict, max_length=max_length, window=True,
+        return seq2tokens(seq, token_dict, seq_length=max_length, window=True,
                           k=args.k, stride=args.stride)
     train_g, val_g, test_g = split.to_generators(
         batch_size=args.batch_size,

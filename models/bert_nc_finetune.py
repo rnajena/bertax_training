@@ -10,7 +10,7 @@ from sklearn.model_selection import train_test_split
 import os.path
 import argparse
 from dataclasses import dataclass, field
-from typing import List
+from typing import List, Optional
 
 
 classes = PARAMS['data']['classes'][1]
@@ -48,15 +48,19 @@ class FragmentGenerator(Sequence):
     x: list
     y: list
     seq_len: int
+    max_seq_len: Optional[int] = None
     k: int = 3
     stride: int = 3
     batch_size: int = 32
     classes: List = field(default_factory=lambda:
                           ['Viruses', 'Archaea', 'Bacteria', 'Eukaryota'])
+    seq_len_like: Optional[np.array] = None
 
     def __post_init__(self):
         self.class_vectors = get_class_vectors(self.classes)
         self.token_dict = get_token_dict(ALPHABET, k=3)
+        if (self.max_seq_len is None):
+            self.max_seq_len = self.seq_len
 
     def __len__(self):
         return np.ceil(len(self.x)
@@ -65,14 +69,19 @@ class FragmentGenerator(Sequence):
     def __getitem__(self, idx):
         batch_fragments = self.x[idx * self.batch_size:
                                  (idx + 1) * self.batch_size]
-        batch_classes = self.y[idx * self.batch_size:
-                               (idx + 1) * self.batch_size]
-        batch_y = np.array([self.class_vectors[c] for c in batch_classes])
-        batch_x = [seq2tokens(seq, self.token_dict, self.seq_len,
-                              k=self.k, stride=self.stride, window=False)
+        batch_x = [seq2tokens(seq, self.token_dict, seq_length=self.seq_len,
+                              k=self.k, stride=self.stride, window=False,
+                              seq_len_like=self.seq_len_like)
                    for seq in batch_fragments]
-        return ([np.array([_[0] for _ in batch_x]),
-                np.array([_[1] for _ in batch_x])], batch_y)
+        if (self.y is not None and len(self.y) != 0):
+            batch_classes = self.y[idx * self.batch_size:
+                                   (idx + 1) * self.batch_size]
+            batch_y = np.array([self.class_vectors[c] for c in batch_classes])
+            return ([np.array([_[0] for _ in batch_x]),
+                     np.array([_[1] for _ in batch_x])], [batch_y])
+        else:
+            return [np.array([_[0] for _ in batch_x]),
+                    np.array([_[1] for _ in batch_x])]
 
 
 def get_fine_model(pretrained_model_file):
@@ -92,6 +101,10 @@ if __name__ == '__main__':
     parser.add_argument('pretrained_bert')
     parser.add_argument('fragments_dir')
     parser.add_argument('--seq_len', help=' ', type=int, default=502)
+    parser.add_argument('--seq_len_sigma',
+                        help='if set, fragment sizes will be random '
+                        'with the specified deviation',
+                        type=float, default=None)
     parser.add_argument('--batch_size', help=' ', type=int, default=32)
     parser.add_argument('--epochs', help=' ', type=int, default=4)
     parser.add_argument('--nr_seqs', help=' ', type=int, default=250_000)

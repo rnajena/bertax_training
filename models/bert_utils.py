@@ -4,6 +4,7 @@ from preprocessing.process_inputs import seq2kmers, ALPHABET
 from random import randint
 import numpy as np
 from itertools import product
+from logging import info
 
 # NOTE: uses just keras (instead of tensorflow.keras). Otherwise
 # loading of the pre-trained model is likely to fail
@@ -17,43 +18,44 @@ def get_token_dict(alph=ALPHABET, k=3):
     return token_dict
 
 
+def load_bert(bert_path, compile_=False):
+    """get bert model from path"""
+    custom_objects = {'GlorotNormal': keras.initializers.glorot_normal,
+                      'GlorotUniform': keras.initializers.glorot_uniform}
+    custom_objects.update(keras_bert.get_custom_objects())
+    model = keras.models.load_model(bert_path, compile=compile_,
+                                    custom_objects=custom_objects)
+    return model
+
+
 def generate_bert_with_pretrained(pretrained_path, nr_classes=4):
     """get model ready for fine-tuning and the maximum input length"""
     # see https://colab.research.google.com/github/CyberZHG/keras-bert
     # /blob/master/demo/tune/keras_bert_classification_tpu.ipynb
-    custom_objects = {'GlorotNormal': keras.initializers.glorot_normal,
-                      'GlorotUniform': keras.initializers.glorot_uniform}
-    custom_objects.update(keras_bert.get_custom_objects())
-    model = keras.models.load_model(pretrained_path, compile=False,
-                                    custom_objects=custom_objects)
+    model = load_bert(pretrained_path)
     inputs = model.inputs[:2]
     nsp_dense_layer = model.get_layer(name='NSP-Dense').output
     softmax_layer = keras.layers.Dense(nr_classes, activation='softmax')(
         nsp_dense_layer)
     model_fine = keras.Model(inputs=inputs, outputs=softmax_layer)
-    return model_fine, inputs[0].shape[1]
+    return model_fine
 
 
-def load_finetuned_bert(model_path):
-    """get finetuned model from path and the maximum input length"""
-    custom_objects = {'GlorotNormal': keras.initializers.glorot_normal,
-                      'GlorotUniform': keras.initializers.glorot_uniform}
-    custom_objects.update(keras_bert.get_custom_objects())
-    model = keras.models.load_model(model_path, compile=False,
-                                    custom_objects=custom_objects)
-    return model, model.inputs[0].shape[1]
-
-
-def seq2tokens(seq, token_dict, max_length=250,
-               k=3, stride=3, window=True):
+def seq2tokens(seq, token_dict, seq_length=250, max_length=None,
+               k=3, stride=3, window=True, seq_len_like=None):
     """transforms raw sequence into list of tokens to be used for
     fine-tuning BERT
     NOTE: intended to be used as `custom_encode_sequence` argument for
     DataGenerators"""
+    if (max_length is None):
+        max_length = seq_length
+    if (seq_len_like is not None):
+        seq_length = min(max_length, np.random.choice(seq_len_like))
+        # open('seq_lens.txt', 'a').write(str(seq_length) + ', ')
     seq = seq2kmers(seq, k=k, stride=stride, pad=True)
     if (window):
-        start = randint(0, max(len(seq) - max_length - 1, 0))
-        end = start + max_length - 1
+        start = randint(0, max(len(seq) - seq_length - 1, 0))
+        end = start + seq_length - 1
     else:
         start = 0
         end = len(seq)

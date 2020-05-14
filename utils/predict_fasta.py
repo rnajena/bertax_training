@@ -1,11 +1,11 @@
 import argparse
-import keras
-import keras_bert
 from Bio.SeqIO import parse
-from models.bert_utils import seq2tokens, get_token_dict, process_bert_tokens_batch
+from models.bert_utils import seq2tokens, get_token_dict
+from models.bert_utils import process_bert_tokens_batch, load_bert
 from models.model import PARAMS
 import numpy as np
 from os.path import splitext
+from logging import warning
 
 
 classes = PARAMS['data']['classes'][1]
@@ -17,16 +17,21 @@ def parse_arguments():
     parser.add_argument('fasta')
     parser.add_argument('--conf_matrix', action='store_true')
     parser.add_argument('--seq_len', type=int, default=502)
+    parser.add_argument('--seq_len_like',
+                        help='path of class dict of seq lens for generating '
+                        'sampled sequence sizes')
     return parser.parse_args()
 
 
 if __name__ == '__main__':
     args = parse_arguments()
     out_prefix = splitext(args.fasta)[0]
-    custom_objects = {'GlorotNormal': keras.initializers.glorot_normal,
-                      'GlorotUniform': keras.initializers.glorot_uniform}
-    custom_objects.update(keras_bert.get_custom_objects())
-    model = keras.models.load_model(args.model, custom_objects=custom_objects)
+    model = load_bert(args.model)
+    max_seq_len = model.input_shape[0][1]
+    if (args.seq_len > max_seq_len):
+        warning(f'provided seq len ({args.seq_len}) exceeds possible maximum '
+                f'seq len ({max_seq_len}). seq len will be adapted to maximum')
+        args.seq_len = max_seq_len
     seq_len = args.seq_len
     token_dict = get_token_dict()
     records = list(parse(args.fasta, 'fasta'))
