@@ -8,6 +8,7 @@ if __name__ == '__main__':
     parser.add_argument('-i', '--input', nargs='+')
     parser.add_argument('taxid', nargs='+', type=int)
     parser.add_argument('--out_prefix', default='filtered_')
+    parser.add_argument('--save_other', action='store_true')
     parser.add_argument('--reverse', action='store_true')
     args = parser.parse_args()
     if (len(args.input) == 2):
@@ -41,18 +42,29 @@ if __name__ == '__main__':
             species_filter.append(taxid)
     filtered_fragments = []
     filtered_species = []
+    filtered_fragments_other = []
+    filtered_species_other = []
     for fragment, species in iterator:
         if ((not args.reverse and species not in species_filter) or (
                 args.reverse and species in species_filter)):
             filtered_fragments.append(fragment)
             filtered_species.append(species)
+        elif (args.save_other):
+            filtered_fragments_other.append(fragment)
+            filtered_species_other.append(species)
+    tuples = [(filtered_fragments, filtered_species, '')]
+    if (args.save_other):
+        tuples.append((filtered_fragments_other, filtered_species_other,
+                       '_other'))
     if (out_mode == 'json'):
-        json.dump(filtered_fragments, open(
-            args.out_prefix + 'fragments.json', 'w'))
-        with open(args.out_prefix + 'species.txt', 'w') as f:
-            for species in filtered_species:
-                f.write(str(species) + '\n')
+        for fragments, species, suffix in tuples:
+            json.dump(fragments, open(
+                f'{args.out_prefix}_fragments{suffix}.json', 'w'))
+            with open('{args.out_prefix}_species{suffix}.txt', 'w') as f:
+                for sp in species:
+                    f.write(str(sp) + '\n')
     else:
-        with open(args.out_prefix + '.fa', 'w') as f:
-            for fragment, species in zip(filtered_fragments, filtered_species):
-                f.write(f'>{species}\n{fragment}\n')
+        for fragments, species, suffix in tuples:
+            with open(args.out_prefix + suffix + '.fa', 'w') as f:
+                for f, s in zip(fragments, species):
+                    f.write(f'>{s}\n{f}\n')

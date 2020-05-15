@@ -55,6 +55,7 @@ class FragmentGenerator(Sequence):
     classes: List = field(default_factory=lambda:
                           ['Viruses', 'Archaea', 'Bacteria', 'Eukaryota'])
     seq_len_like: Optional[np.array] = None
+    window: bool = False
 
     def __post_init__(self):
         self.class_vectors = get_class_vectors(self.classes)
@@ -70,7 +71,8 @@ class FragmentGenerator(Sequence):
         batch_fragments = self.x[idx * self.batch_size:
                                  (idx + 1) * self.batch_size]
         batch_x = [seq2tokens(seq, self.token_dict, seq_length=self.seq_len,
-                              k=self.k, stride=self.stride, window=False,
+                              max_length=self.max_seq_len,
+                              k=self.k, stride=self.stride, window=self.window,
                               seq_len_like=self.seq_len_like)
                    for seq in batch_fragments]
         if (self.y is not None and len(self.y) != 0):
@@ -109,6 +111,9 @@ if __name__ == '__main__':
     parser.add_argument('--epochs', help=' ', type=int, default=4)
     parser.add_argument('--nr_seqs', help=' ', type=int, default=250_000)
     parser.add_argument('--learning_rate', help=' ', type=float, default=5e-5)
+    parser.add_argument('--save_name',
+                        help='custom name for saved finetuned model',
+                        default=None)
     args = parser.parse_args()
     learning_rate = args.learning_rate
     # building model
@@ -126,7 +131,11 @@ if __name__ == '__main__':
         epochs=args.epochs,
         validation_data=FragmentGenerator(f_val_x, f_val_y, max_length,
                                           batch_size=args.batch_size))
-    model.save(os.path.splitext(args.pretrained_bert)[0] + '_finetuned.h5')
+    if (args.save_name is not None):
+        save_path = args.save_name + '.h5'
+    else:
+        save_path = os.path.splitext(args.pretrained_bert)[0] + '_finetuned.h5'
+    model.save(save_path)
     print('testing...')
     result = model.evaluate(FragmentGenerator(f_test_x, f_test_y, max_length,
                                               batch_size=args.batch_size))

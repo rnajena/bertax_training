@@ -31,6 +31,10 @@ def parse_arguments():
     parser.add_argument('--seq_len_like', default=None,
                         help='path of pickled class dict of seq lens for '
                         'generating sampled sequence sizes')
+    parser.add_argument('--no_seq_len_window', action='store_true',
+                        help='if specified, the beginning of the sequence'
+                        'will be used instead of a random window, if the '
+                        'sequence is too long')
     parser.add_argument('--nr_seqs', default=250_000, type=int,
                         help='nr of sequences to use per class')
     parser.add_argument('--batch_size', default=32, type=int,
@@ -110,6 +114,7 @@ if __name__ == '__main__':
                                       max_seq_len=max_seq_len,
                                       batch_size=args.batch_size,
                                       classes=args.classes,
+                                      window=(not args.no_seq_len_window),
                                       **encode_kwargs)
     else:
         raise Exception(f'only sources {SOURCES} are accepted')

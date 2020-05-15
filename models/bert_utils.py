@@ -58,7 +58,7 @@ def seq2tokens(seq, token_dict, seq_length=250, max_length=None,
         end = start + seq_length - 1
     else:
         start = 0
-        end = len(seq)
+        end = seq_length
     indices = [token_dict['[CLS]']] + [token_dict[word]
                                        if word in token_dict
                                        else token_dict['[UNK]']
