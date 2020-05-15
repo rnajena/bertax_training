@@ -60,7 +60,7 @@ if __name__ == '__main__':
         for fragments, species, suffix in tuples:
             json.dump(fragments, open(
                 f'{args.out_prefix}_fragments{suffix}.json', 'w'))
-            with open('{args.out_prefix}_species{suffix}.txt', 'w') as f:
+            with open(f'{args.out_prefix}_species{suffix}.txt', 'w') as f:
                 for sp in species:
                     f.write(str(sp) + '\n')
     else:
