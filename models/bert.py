@@ -1,6 +1,8 @@
 if __name__ == '__main__' and __package__ is None:
     from os import sys, path
     sys.path.append(path.dirname(path.dirname(path.abspath(__file__))))
+import os
+os.environ['TF_KERAS']="1"
 from keras_bert import get_base_dict, get_model, compile_model
 from keras_bert import gen_batch_inputs
 from itertools import product
@@ -9,16 +11,24 @@ from preprocessing.process_inputs import ALPHABET, read_seq, seq2kmers
 from preprocessing.generate_data import DataSplit
 from tqdm import tqdm
 import sys
+import numpy as np
+from keras.callbacks import ModelCheckpoint, TensorBoard, EarlyStopping
+
+from random import sample
 from math import log10
+
+import tensorflow as tf
+print("Num GPUs Available: ", len(tf.config.experimental.list_physical_devices('GPU')))
+mirrored_strategy = tf.distribute.MirroredStrategy()
 
 root_fa_dir = sys.argv[1]
 from_cache = sys.argv[2]
 progress_bar = True
 
 # controlling training sizes
-balance = True
-epochs = 15            # default
-batch_size = 256                 # default is 256, but probably too big for VRAM
+balance = False
+epochs = 25            # default
+batch_size = 35              # default is 256, but probably too big for VRAM
 # batch_size = 1                 # test
 val_split = 0.005
 
@@ -105,6 +115,31 @@ def run_epoch(filenames, model_function, progress_bar=False):
             metrics = train_batch(chunk)
     return metrics
 
+def batch_generator(filenames):
+    # while True:
+    order = np.arange(len(filenames))
+    order = np.random.permutation(order)
+    pairs = []
+    i = 0
+    pbar = tqdm(total=len(filenames))
+    while (i < len(filenames)):
+        # seq = seq2kmers(read_seq_ssd_version(root_fa_dir, filenames[order[i]]), k=1,stride=1)
+        seq = seq2kmers(read_seq(filenames[order[i]]), k=3,stride=3)
+        seq_sentences = [sentence for sentence in
+                         seq_split_generator(seq, min_split, max_split)]
+        pairs.extend(zip(*[iter(seq_sentences)] * 2))
+        while (len(pairs) >= batch_size):
+            yield gen_batch_inputs(
+                pairs[:batch_size],
+                token_dict,
+                token_list,
+                seq_len=seq_len)
+            pairs = pairs[batch_size:]
+
+        i += 1
+        pbar.update(1)
+    pbar.close()
+    print("end of epoch")
 
 if __name__ == '__main__':
     # import keras
@@ -119,18 +154,19 @@ if __name__ == '__main__':
     token_dict = get_token_dict()
     token_list = list(token_dict)
 
-    # Build & train the model
-    model = get_model(
-        token_num=len(token_dict),
-        head_num=head_num,
-        transformer_num=transformer_num,
-        embed_dim=embed_dim,
-        feed_forward_dim=feed_forward_dim,
-        seq_len=seq_len,
-        pos_num=pos_num,
-        dropout_rate=dropout_rate,
-    )
-    compile_model(model)
+    # Build & train the model ready for multi-gpu
+    with mirrored_strategy.scope():
+        model = get_model(
+            token_num=len(token_dict),
+            head_num=head_num,
+            transformer_num=transformer_num,
+            embed_dim=embed_dim,
+            feed_forward_dim=feed_forward_dim,
+            seq_len=seq_len,
+            pos_num=pos_num,
+            dropout_rate=dropout_rate,
+        )
+        compile_model(model)
     model.summary()
 
     # NOTE: because of internal implementation: val_data := test_data
@@ -138,24 +174,44 @@ if __name__ == '__main__':
                       # 10,      # test
                       12_000_000,
                       ['Viruses', 'Archaea', 'Bacteria', 'Eukaryota'],
-                      from_cache, balance=balance, train_test_split=val_split,
-                      val_split=0)
+                      from_cache, balance=balance, train_test_split=0,
+                      val_split=val_split, repeated_undersampling=True)
     print('split done')
     files_train = split.get_train_files()[0]
-    files_val = split.get_test_files()[0]
-    for i in range(epochs):
-        print(f'=== Epoch {i+1:2}/{epochs} ===')
-        print('training')
-        metrics = run_epoch(files_train, model.train_on_batch, progress_bar)
-        print('training metrics', metrics)
-        filename = f'bert_v1_epoch{i+1}.h5'
-        print(f'saved to {filename}')
-        model.save(filename)
-        print('validating')
-        metrics = run_epoch(files_val, model.test_on_batch)
-        print('validation metrics', metrics)
-    model.save(f'bert_v1_trained.h5')
+    files_val = split.get_val_files()[0]
+    train_g = batch_generator(filenames=files_train)
+    val_g = batch_generator(filenames=files_val)
+    test_g = val_g
 
+    filepath1 = "model.best.acc.hdf5"
+    filepath2 = "model.best.loss.hdf5"
+    # checkpoint1 = ModelCheckpoint(filepath1, monitor='val_accuracy', verbose=1, save_best_only=True,
+    #                               save_weights_only=False, mode='max')
+    checkpoint2 = ModelCheckpoint(filepath2, monitor='val_loss', verbose=1, save_best_only=True,
+                                  save_weights_only=False, mode='min')
+    checkpoint3 = EarlyStopping('val_loss', min_delta=0, patience=0, restore_best_weights=True)
+    callbacks_list = [checkpoint2, checkpoint3]
+
+    try:
+        for epoch in range(epochs):
+            model.fit(train_g, validation_data=val_g, verbose=2, steps_per_epoch=None,validation_steps=None,
+                       epochs=epoch+1,initial_epoch=epoch, callbacks=callbacks_list)
+            train_g = batch_generator(filenames=files_train)
+            val_g = batch_generator(filenames=files_val)
+
+    except (KeyboardInterrupt):
+        print("training interrupted, current status will be saved and tested, press ctrl+c to cancel this")
+        file_suffix = '_aborted.hdf5'
+        model.save("bert_small_trained" + file_suffix)
+        print('testing...')
+        result = model.evaluate(test_g)
+        print("test results:",*zip(model.metrics_names, result))
+        exit()
+
+    print('testing...')
+    result = model.evaluate(test_g,steps=(len(files_val)))
+    print("test results:", *zip(model.metrics_names, result))
+    model.save(f'bert_small_trained.hdf5')
 
 def random_words(n):
     from random import choices
