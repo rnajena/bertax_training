@@ -87,12 +87,12 @@ class FragmentGenerator(Sequence):
 
 
 def get_fine_model(pretrained_model_file):
-    model_fine, max_length = generate_bert_with_pretrained(
+    model_fine = generate_bert_with_pretrained(
         pretrained_model_file, len(classes))
-    model_fine.summary()
     model_fine.compile(keras.optimizers.Adam(learning_rate),
                        loss='categorical_crossentropy',
                        metrics=['accuracy'])
+    max_length = model_fine.input_shape[0][1]
     return model_fine, max_length
 
 
