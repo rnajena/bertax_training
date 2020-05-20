@@ -133,7 +133,8 @@ if __name__ == '__main__':
                 y.extend(labels)
         y_indices = list(map(args.classes.index, y))
         results = [np.nan,
-                   np.sum(preds_discrete == y_indices) / len(y)
+                   np.sum(preds_discrete == y_indices[:len(preds_discrete)])
+                   / len(preds_discrete)
                    if len(y) != 0 else np.nan]
         filepath = (splitext(basename(args.model_path))[0] + '_'
                     + str(int(time())))

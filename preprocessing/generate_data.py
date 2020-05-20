@@ -331,7 +331,7 @@ class BatchGenerator(Sequence):
         # old version does count all samples available rather than only samples used in epoch
         # return np.ceil(len(self.file_names) /
         #                float(self.batch_size)).astype(np.int)
-        return int(np.ceil(len(self.list_IDs) / self.batch_size))
+        return int(np.floor(len(self.list_IDs) / self.batch_size))
 
     def __getitem__(self, idx):
         batch_filenames = [self.file_names[i] for i in self.list_IDs[idx * self.batch_size:(idx+1) * self.batch_size]]
