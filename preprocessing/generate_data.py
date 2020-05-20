@@ -267,10 +267,13 @@ class BatchGenerator(Sequence):
     w2vfile: Optional[str] = None
     custom_encode_sequence: Optional[Callable[[str], list]] = None
     process_batch_function: Optional[Callable[[list], list]] = None
+    save_batches: bool = False
 
     def __post_init__(self):
         if (not self.force_max_len):
             raise Exception('not supported anymore')
+        if (self.save_batches):
+            self.stored = []
         self.cached = {}
 
         self.samples = {}
@@ -328,7 +331,7 @@ class BatchGenerator(Sequence):
         # old version does count all samples available rather than only samples used in epoch
         # return np.ceil(len(self.file_names) /
         #                float(self.batch_size)).astype(np.int)
-        return int(np.floor(len(self.list_IDs) / self.batch_size))
+        return int(np.ceil(len(self.list_IDs) / self.batch_size))
 
     def __getitem__(self, idx):
         batch_filenames = [self.file_names[i] for i in self.list_IDs[idx * self.batch_size:(idx+1) * self.batch_size]]
@@ -343,6 +346,8 @@ class BatchGenerator(Sequence):
             result = (self.process_batch_function(batch_x), batch_y)
         else:
             result = (np.array(batch_x), batch_y)
+        if (self.save_batches):
+            self.stored.append((idx, batch_filenames, batch_labels, result))
         if (self.cache):
             if (self.cache_seq_limit is not None
                 and len(self.cached) * self.batch_size
@@ -357,11 +362,10 @@ class BatchGenerator(Sequence):
         1. go over each class
         2. select randomly #n_sample samples of each class
         3. add selection list to dict with class as key
-        4. make list containing indeces for samples in self.file_names   
+        4. make list containing indeces for samples in self.file_names
         """
 
         # TODO erstelle dict mit classen und ids
-
         self.list_IDs = np.array([],dtype=np.int)
         # self.labels = np.array([])
         for class_i in self.classes:

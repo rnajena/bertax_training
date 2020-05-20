@@ -96,7 +96,7 @@ if __name__ == '__main__':
             x, y, args.classes, args.batch_size,
             custom_encode_sequence=custom_encode_sequence,
             process_batch_function=process_bert_tokens_batch, enc_k=args.k,
-            enc_stride=args.stride)
+            enc_stride=args.stride, save_batches=True)
     elif (args.source == 'fragments' or args.source == 'fasta'):
         if (args.source == 'fragments'):
             x, y = load_fragments(args.fragments_dir, balance=not args.no_balance,
@@ -123,6 +123,14 @@ if __name__ == '__main__':
     else:
         preds = model.predict(generator, verbose=1)
         preds_discrete = np.argmax(preds, axis=1)
+        if (args.source == 'genes'):
+            # when BatchGenerator is used, batches are randomized,
+            # thus x and y have to be reloaded
+            x = []
+            y = []
+            for nr, files, labels, result in generator.stored:
+                x.extend(files)
+                y.extend(labels)
         y_indices = list(map(args.classes.index, y))
         results = [np.nan,
                    np.sum(preds_discrete == y_indices) / len(y)
