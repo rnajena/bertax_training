@@ -409,6 +409,26 @@ class FragmentGenerator(Sequence):
         return (batch_x, batch_y)
 
 
+class PredictGenerator(Sequence):
+    """Wrapper class around Generators allowing those to be used with
+    `model.predict`
+
+    Acts exactly like the Generator, but yields only the input(s), not
+    the output"""
+
+    def __init__(self, generator):
+        self.g = generator
+        self.targets = []
+
+    def __len__(self):
+        return len(self.g)
+
+    def __getitem__(self, idx):
+        batch = self.g[idx]
+        self.targets.extend(batch[1])
+        return batch[0]
+
+
 def load_fragments(fragments_dir, classes, shuffle_=True, nr_seqs=None):
     x = []
     y = []

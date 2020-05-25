@@ -4,7 +4,7 @@ from preprocessing.generate_data import DataSplit
 from models.model import PARAMS
 from models.bert_utils import get_token_dict, generate_bert_with_pretrained
 from models.bert_utils import seq2tokens, process_bert_tokens_batch
-from models.bert_utils import load_bert
+from models.bert_utils import load_bert, predict
 import argparse
 from os.path import splitext
 from keras.callbacks import ModelCheckpoint, TensorBoard, EarlyStopping
@@ -37,6 +37,8 @@ def parse_arguments():
     parser.add_argument('--alphabet', help=' ', default=ALPHABET)
     parser.add_argument('--k', help=' ', default=3, type=int)
     parser.add_argument('--stride', help=' ', default=3, type=int)
+    parser.add_argument('--store_predictions', help=' ', action='store_true')
+    parser.add_argument('--roc_auc', help=' ', action='store_true')
     args = parser.parse_args()
     return args
 
@@ -92,8 +94,20 @@ if __name__ == '__main__':
         print("test results:",*zip(model_fine.metrics_names, result))
         exit()
 
-    file_suffix = '_finetuned.5' if (not args.finetuned) else '_plus.h5'
+    file_suffix = '_finetuned.h5' if (not args.finetuned) else '_plus.h5'
     model_fine.save(splitext(args.pretrained_path)[0] + file_suffix)
     print('testing...')
-    result = model_fine.evaluate(test_g)
-    print("test results:", *zip(model_fine.metrics_names, result))
+    if (args.store_predictions or args.roc_auc):
+        predicted = predict(model_fine, test_g, args.roc_auc, args.classes,
+                            return_data=args.store_predictions)
+        result = predicted['metrics']
+        metrics_names = predicted['metrics_names']
+        if (args.store_predictions):
+            import pickle
+            pickle.dump(predicted, open(splitext(args.pretrained_path)[0]
+                                        + splitext(file_suffix)[0]
+                                        + '_predictions.pkl', 'wb'))
+    else:
+        result = model_fine.evaluate(test_g)
+        metrics_names = model_fine.metrics_names
+    print("test results:", *zip(metrics_names, result))

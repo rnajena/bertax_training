@@ -1,10 +1,14 @@
 import keras
 import keras_bert
+import tensorflow as tf
 from preprocessing.process_inputs import seq2kmers, ALPHABET
+from preprocessing.generate_data import PredictGenerator
 from random import randint
 import numpy as np
 from itertools import product
 from logging import info
+from misc.metrics import compute_roc, accuracy, loss
+
 
 # NOTE: uses just keras (instead of tensorflow.keras). Otherwise
 # loading of the pre-trained model is likely to fail
@@ -78,3 +82,22 @@ def process_bert_tokens_batch(batch_x):
     input2s] with this function"""
     return [np.array([_[0] for _ in batch_x]),
             np.array([_[1] for _ in batch_x])]
+
+
+def predict(model, test_generator, roc_auc=True, classes=None,
+            return_data=False):
+    predict_g = PredictGenerator(test_generator)
+    preds = model.predict(predict_g)
+    y = np.concatenate(predict_g.targets)
+    acc = accuracy(y, preds)
+    loss_ = loss(y, preds)
+    if (roc_auc):
+        roc_auc = compute_roc(y, preds,
+                              classes).roc_auc
+        result = [loss_, acc, roc_auc]
+        metrics_names = ['test_loss', 'test_accuracy', 'roc_auc']
+    else:
+        result = [loss_, acc]
+        metrics_names = ['test_loss', 'test_accuracy']
+    return {'metrics': result, 'metrics_names': metrics_names,
+            'data': (y, preds) if return_data else None}
