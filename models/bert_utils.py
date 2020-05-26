@@ -85,9 +85,9 @@ def process_bert_tokens_batch(batch_x):
 
 
 def predict(model, test_generator, roc_auc=True, classes=None,
-            return_data=False):
+            return_data=False, nonverbose=False):
     predict_g = PredictGenerator(test_generator)
-    preds = model.predict(predict_g)
+    preds = model.predict(predict_g, verbose=0 if nonverbose else 1)
     y = predict_g.get_targets()[:len(preds)] # in case not everything was predicted
     acc = accuracy(y, preds)
     loss_ = loss(y, preds)

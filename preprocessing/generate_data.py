@@ -425,7 +425,9 @@ class PredictGenerator(Sequence):
 
     def __getitem__(self, idx):
         batch = self.g[idx]
-        self.targets.append((idx, batch[1]))
+        self.targets.append((idx, batch[1]
+                             if isinstance(batch[1], np.ndarray)
+                             else batch[1][0]))
         return batch[0]
 
     def get_targets(self):

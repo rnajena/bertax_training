@@ -110,7 +110,7 @@ if __name__ == '__main__':
                         type=float, default=None)
     parser.add_argument('--batch_size', help=' ', type=int, default=32)
     parser.add_argument('--epochs', help=' ', type=int, default=4)
-    parser.add_argument('--nr_seqs', help=' ', type=int, default=250_000)
+    parser.add_argument('--nr_seqs', help=' ', type=int, default=260_000)
     parser.add_argument('--learning_rate', help=' ', type=float, default=5e-5)
     parser.add_argument('--save_name',
                         help='custom name for saved finetuned model',
@@ -123,7 +123,7 @@ if __name__ == '__main__':
     model, max_length = get_fine_model(args.pretrained_bert)
     model.summary()
     # loading training data
-    x, y = load_fragments(args.fragments_dir)
+    x, y = load_fragments(args.fragments_dir, nr_seqs=args.nr_seqs)
     f_train_x, f_test_x, f_train_y, f_test_y = train_test_split(
         x, y, test_size=0.2)
     f_train_x, f_val_x, f_train_y, f_val_y = train_test_split(
