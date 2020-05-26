@@ -4,7 +4,8 @@ from preprocessing.process_inputs import get_class_vectors, ALPHABET
 from models.model import PARAMS
 import numpy as np
 from keras.utils import Sequence
-from models.bert_utils import get_token_dict, seq2tokens, generate_bert_with_pretrained
+from models.bert_utils import get_token_dict, seq2tokens, predict
+from models.bert_utils import generate_bert_with_pretrained
 from random import shuffle, sample
 from sklearn.model_selection import train_test_split
 import os.path
@@ -114,6 +115,8 @@ if __name__ == '__main__':
     parser.add_argument('--save_name',
                         help='custom name for saved finetuned model',
                         default=None)
+    parser.add_argument('--store_predictions', help=' ', action='store_true')
+    parser.add_argument('--roc_auc', help=' ', action='store_true')
     args = parser.parse_args()
     learning_rate = args.learning_rate
     # building model
@@ -137,6 +140,19 @@ if __name__ == '__main__':
         save_path = os.path.splitext(args.pretrained_bert)[0] + '_finetuned.h5'
     model.save(save_path)
     print('testing...')
-    result = model.evaluate(FragmentGenerator(f_test_x, f_test_y, max_length,
-                                              batch_size=args.batch_size))
-    print(result)
+    test_g = FragmentGenerator(f_test_x, f_test_y, max_length,
+                               batch_size=args.batch_size)
+    if (args.store_predictions or args.roc_auc):
+        predicted = predict(
+            model, test_g,
+            args.roc_auc, classes, return_data=args.store_predictions)
+        result = predicted['metrics']
+        metrics_names = predicted['metrics_names']
+        if (args.store_predictions):
+            import pickle
+            pickle.dump(predicted, open(os.path.splitext(save_path)[0]
+                                        + '_predictions.pkl', 'wb'))
+    else:
+        result = model.evaluate(test_g)
+        metrics_names = model.metrics_names
+    print("test results:", *zip(metrics_names, result))
