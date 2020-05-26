@@ -425,8 +425,16 @@ class PredictGenerator(Sequence):
 
     def __getitem__(self, idx):
         batch = self.g[idx]
-        self.targets.extend(batch[1])
+        self.targets.append((idx, batch[1]))
         return batch[0]
+
+    def get_targets(self):
+        sorted_targets = sorted(self.targets, key=lambda x: x[0])
+        try:
+            return np.concatenate([sorted_targets[i][1] for i in
+                                   range(sorted_targets[-1][0] + 1)])
+        except Exception as e:
+            raise Exception('possibly batch missing in stored targets', e)
 
 
 def load_fragments(fragments_dir, classes, shuffle_=True, nr_seqs=None):
