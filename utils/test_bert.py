@@ -4,13 +4,15 @@ from preprocessing.generate_data import DataSplit, BatchGenerator
 from models.model import PARAMS
 from models.bert_utils import get_token_dict
 from models.bert_utils import seq2tokens, process_bert_tokens_batch
-from models.bert_utils import load_bert
+from models.bert_utils import load_bert, predict
 from models.bert_nc_finetune import load_fragments, FragmentGenerator
 import numpy as np
 from logging import warning, getLogger, DEBUG
 from os.path import splitext, basename
 from time import time
 import pickle
+import os
+os.environ['TF_KERAS'] = "1"
 
 SOURCES = ['genes', 'fragments', 'fasta']
 
@@ -23,6 +25,7 @@ def parse_arguments():
     parser.add_argument('--source', default='genes',
                         choices=SOURCES, help=' ')
     parser.add_argument('--store_predictions', action='store_true', help=' ')
+    parser.add_argument('--store_name', default=None, help=' ')
     parser.add_argument('--fasta', default=None,
                         help='fasta to load if source=fasta')
     parser.add_argument('--conf_matrix', action='store_true', help=' ')
@@ -121,23 +124,16 @@ if __name__ == '__main__':
     if (not args.store_predictions and len(y) != 0):
         results = model.evaluate(generator)
     else:
-        preds = model.predict(generator, verbose=1)
-        preds_discrete = np.argmax(preds, axis=1)
-        if (args.source == 'genes'):
-            # when BatchGenerator is used, batches are randomized,
-            # thus x and y have to be reloaded
-            x = []
-            y = []
-            for nr, files, labels, result in generator.stored:
-                x.extend(files)
-                y.extend(labels)
-        y_indices = list(map(args.classes.index, y))
-        results = [np.nan,
-                   np.sum(preds_discrete == y_indices[:len(preds_discrete)])
-                   / len(preds_discrete)
-                   if len(y) != 0 else np.nan]
-        filepath = (splitext(basename(args.model_path))[0] + '_'
-                    + str(int(time())))
-        pickle.dump({'classes': args.classes, 'x': x, 'y': y_indices,
-                     'preds': preds}, open(filepath + '.pkl', 'wb'))
+        predicted = predict(
+            model, generator,
+            True, args.classes, return_data=True, store_x=True)
+        if (not args.store_name):
+            filepath = (splitext(basename(args.model_path))[0] + '_'
+                        + str(int(time())))
+        else:
+            filepath = args.store_name
+        pickle.dump({'classes': args.classes, 'x': predicted['x'],
+                     'y': predicted['data'][0], 'preds': predicted['data'][1]},
+                    open(filepath + '.pkl', 'wb'))
+        results = [*zip(predicted['metrics_names'], predicted['metrics'])]
     print('results:', results)

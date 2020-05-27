@@ -416,9 +416,11 @@ class PredictGenerator(Sequence):
     Acts exactly like the Generator, but yields only the input(s), not
     the output"""
 
-    def __init__(self, generator):
+    def __init__(self, generator, store_x=False):
         self.g = generator
+        self.store_x = store_x
         self.targets = []
+        self.x = []
 
     def __len__(self):
         return len(self.g)
@@ -428,15 +430,30 @@ class PredictGenerator(Sequence):
         self.targets.append((idx, batch[1]
                              if isinstance(batch[1], np.ndarray)
                              else batch[1][0]))
+        if (self.store_x):
+            self.x.append((idx, batch[0]))
         return batch[0]
 
-    def get_targets(self):
-        sorted_targets = sorted(self.targets, key=lambda x: x[0])
+    def _get_stored(self, stored):
+        stored = sorted(stored, key=lambda x: x[0])
+        stored = [[s for s in stored if s[0] == i][-1] for i in
+                  range(stored[-1][0] + 1)]
+        if (not all(t[0] == i for i, t in enumerate(stored))):
+            warning('something probably went wrong storing the prediction values', stored)
         try:
-            return np.concatenate([sorted_targets[i][1] for i in
-                                   range(sorted_targets[-1][0] + 1)])
+            return [stored[i][1] for i in
+                    range(stored[-1][0] + 1)]
         except Exception as e:
-            raise Exception('possibly batch missing in stored targets', e)
+            raise Exception('possibly batch missing in stored values', e)
+
+    def get_targets(self):
+        return np.concatenate(self._get_stored(self.targets))
+
+    def get_x(self):
+        if (not self.store_x):
+            warning('option to store x values was not set')
+            return None
+        return self._get_stored(self.x)
 
 
 def load_fragments(fragments_dir, classes, shuffle_=True, nr_seqs=None):
