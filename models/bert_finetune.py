@@ -8,6 +8,7 @@ from models.bert_utils import load_bert, predict
 import argparse
 from os.path import splitext
 from keras.callbacks import ModelCheckpoint, TensorBoard, EarlyStopping
+from logging import warning
 
 
 def parse_arguments():
@@ -37,6 +38,7 @@ def parse_arguments():
     parser.add_argument('--alphabet', help=' ', default=ALPHABET)
     parser.add_argument('--k', help=' ', default=3, type=int)
     parser.add_argument('--stride', help=' ', default=3, type=int)
+    parser.add_argument('--seq_len', help=' ', default=502, type=int)
     parser.add_argument('--store_predictions', help=' ', action='store_true')
     parser.add_argument('--roc_auc', help=' ', action='store_true')
     args = parser.parse_args()
@@ -51,6 +53,10 @@ if __name__ == '__main__':
     else:
         model_fine = load_bert(args.pretrained_path)
     max_length = model_fine.input_shape[0][1]
+    if (args.seq_len > max_length):
+        warning(f'desired seq len ({args.seq_len}) is higher than possible ({max_length})'
+                f'setting seq len to {max_length}')
+        args.seq_len = max_length
     model_fine.summary()
     model_fine.compile(keras.optimizers.Adam(args.learning_rate),
                        loss='categorical_crossentropy',
@@ -64,7 +70,8 @@ if __name__ == '__main__':
                       repeated_undersampling=args.repeated_undersampling)
 
     def custom_encode_sequence(seq):
-        return seq2tokens(seq, token_dict, seq_length=max_length, window=True,
+        return seq2tokens(seq, token_dict, seq_length=args.seq_len,
+                          max_length=max_length, window=True,
                           k=args.k, stride=args.stride)
     train_g, val_g, test_g = split.to_generators(
         batch_size=args.batch_size,

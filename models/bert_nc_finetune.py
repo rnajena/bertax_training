@@ -12,6 +12,7 @@ import os.path
 import argparse
 from dataclasses import dataclass, field
 from typing import List, Optional
+from logging import warning
 
 
 classes = PARAMS['data']['classes'][1]
@@ -104,10 +105,8 @@ if __name__ == '__main__':
     parser.add_argument('pretrained_bert')
     parser.add_argument('fragments_dir')
     parser.add_argument('--seq_len', help=' ', type=int, default=502)
-    parser.add_argument('--seq_len_sigma',
-                        help='if set, fragment sizes will be random '
-                        'with the specified deviation',
-                        type=float, default=None)
+    parser.add_argument('--k', help=' ', default=3, type=int)
+    parser.add_argument('--stride', help=' ', default=3, type=int)
     parser.add_argument('--batch_size', help=' ', type=int, default=32)
     parser.add_argument('--epochs', help=' ', type=int, default=4)
     parser.add_argument('--nr_seqs', help=' ', type=int, default=260_000)
@@ -121,6 +120,13 @@ if __name__ == '__main__':
     learning_rate = args.learning_rate
     # building model
     model, max_length = get_fine_model(args.pretrained_bert)
+    if (args.seq_len > max_length):
+        warning(f'desired seq len ({args.seq_len}) is higher than possible ({max_length})'
+                f'setting seq len to {max_length}')
+        args.seq_len = max_length
+    generator_args = {
+        'max_length': max_length, 'k': args.k, 'stride': args.stride,
+        'batch_size': args.batch_size, 'window': True}
     model.summary()
     # loading training data
     x, y = load_fragments(args.fragments_dir, nr_seqs=args.nr_seqs)
@@ -129,19 +135,19 @@ if __name__ == '__main__':
     f_train_x, f_val_x, f_train_y, f_val_y = train_test_split(
         f_train_x, f_train_y, test_size=0.05)
     model.fit(
-        FragmentGenerator(f_train_x, f_train_y, max_length,
-                          batch_size=args.batch_size),
+        FragmentGenerator(f_train_x, f_train_y, args.seq_len,
+                          **generator_args),
         epochs=args.epochs,
-        validation_data=FragmentGenerator(f_val_x, f_val_y, max_length,
-                                          batch_size=args.batch_size))
+        validation_data=FragmentGenerator(f_val_x, f_val_y, args.seq_len,
+                                          **generator_args))
     if (args.save_name is not None):
         save_path = args.save_name + '.h5'
     else:
         save_path = os.path.splitext(args.pretrained_bert)[0] + '_finetuned.h5'
     model.save(save_path)
     print('testing...')
-    test_g = FragmentGenerator(f_test_x, f_test_y, max_length,
-                               batch_size=args.batch_size)
+    test_g = FragmentGenerator(f_test_x, f_test_y, args.seq_len,
+                               **generator_args)
     if (args.store_predictions or args.roc_auc):
         predicted = predict(
             model, test_g,
