@@ -125,7 +125,7 @@ if __name__ == '__main__':
                 f'setting seq len to {max_length}')
         args.seq_len = max_length
     generator_args = {
-        'max_length': max_length, 'k': args.k, 'stride': args.stride,
+        'max_seq_len': max_length, 'k': args.k, 'stride': args.stride,
         'batch_size': args.batch_size, 'window': True}
     model.summary()
     # loading training data
