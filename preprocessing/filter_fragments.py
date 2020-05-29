@@ -31,6 +31,16 @@ if __name__ == '__main__':
           + ' has been provided as input, output will be of the same format')
     ncbi = NCBITaxa()
     species_filter = []
+    # if (len(args.taxid) == 1 and str(args.taxid[0]).endswith('%')):
+    #     perc = int(str(args.taxid[0])[:str(args.taxid[0]).index('%')])
+    #     print(f'filtering {perc}% of all families')
+    #     families = []
+    #     for _, sp in iterator:
+    #         fam = [_ for _ in ncbi.get_lineage(sp)
+    #                if ncbi.get_rank([_])[_] == 'family']
+    #         if len(fam) >= 1:
+    #             families.append(fam[0])
+    #     species_ =
     print('filtering ' + ','.join(ncbi.translate_to_names(args.taxid)))
     for taxid in args.taxid:
         try:
