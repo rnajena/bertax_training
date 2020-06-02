@@ -13,6 +13,7 @@ import argparse
 from dataclasses import dataclass, field
 from typing import List, Optional
 from logging import warning
+import pickle
 
 
 classes = PARAMS['data']['classes'][1]
@@ -105,6 +106,9 @@ if __name__ == '__main__':
     parser.add_argument('pretrained_bert')
     parser.add_argument('fragments_dir')
     parser.add_argument('--seq_len', help=' ', type=int, default=502)
+    parser.add_argument('--seq_len_like', default=None,
+                        help='path of pickled class dict of seq lens for '
+                        'generating sampled sequence sizes')
     parser.add_argument('--k', help=' ', default=3, type=int)
     parser.add_argument('--stride', help=' ', default=3, type=int)
     parser.add_argument('--batch_size', help=' ', type=int, default=32)
@@ -118,6 +122,15 @@ if __name__ == '__main__':
     parser.add_argument('--roc_auc', help=' ', action='store_true')
     args = parser.parse_args()
     learning_rate = args.learning_rate
+    if (args.seq_len_like is not None):
+        seq_len_dict = pickle.load(open(args.seq_len_like, 'rb'))
+        min_nr_seqs = min(map(len, seq_len_dict.values()))
+        seq_len_like = []
+        for k in seq_len_dict:
+            seq_len_like.extend(np.random.choice(seq_len_dict[k], min_nr_seqs)
+                                // args.k)
+    else:
+        seq_len_like = None
     # building model
     model, max_length = get_fine_model(args.pretrained_bert)
     if (args.seq_len > max_length):
@@ -126,7 +139,8 @@ if __name__ == '__main__':
         args.seq_len = max_length
     generator_args = {
         'max_seq_len': max_length, 'k': args.k, 'stride': args.stride,
-        'batch_size': args.batch_size, 'window': True}
+        'batch_size': args.batch_size, 'window': True,
+        'seq_len_like': seq_len_like}
     model.summary()
     # loading training data
     x, y = load_fragments(args.fragments_dir, nr_seqs=args.nr_seqs)
