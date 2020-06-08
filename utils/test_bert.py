@@ -134,6 +134,6 @@ if __name__ == '__main__':
             filepath = args.store_name
         pickle.dump({'classes': args.classes, 'x': predicted['x'],
                      'y': predicted['data'][0], 'preds': predicted['data'][1]},
-                    open(filepath + '.pkl', 'wb'))
+                    open(filepath + '.pkl', 'wb'), protocol=4)
         results = [*zip(predicted['metrics_names'], predicted['metrics'])]
     print('results:', results)
