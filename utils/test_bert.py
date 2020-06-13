@@ -1,6 +1,6 @@
 import argparse
 from preprocessing.process_inputs import ALPHABET
-from preprocessing.generate_data import DataSplit, BatchGenerator
+from preprocessing.generate_data import DataSplit, BatchGenerator, PredictGenerator
 from models.model import PARAMS
 from models.bert_utils import get_token_dict
 from models.bert_utils import seq2tokens, process_bert_tokens_batch
@@ -12,6 +12,7 @@ from os.path import splitext, basename
 from time import time
 import pickle
 import os
+from keras.models import Model
 os.environ['TF_KERAS'] = "1"
 
 SOURCES = ['genes', 'fragments', 'fasta']
@@ -55,6 +56,7 @@ def parse_arguments():
     parser.add_argument('--alphabet', help=' ', default=ALPHABET)
     parser.add_argument('--k', help=' ', default=3, type=int)
     parser.add_argument('--stride', help=' ', default=3, type=int)
+    parser.add_argument('--export_seq_vectors', help=' ', action='store_true')
     args = parser.parse_args()
     return args
 
@@ -121,19 +123,29 @@ if __name__ == '__main__':
                                       **encode_kwargs)
     else:
         raise Exception(f'only sources {SOURCES} are accepted')
+    if (not args.store_name):
+        filepath = (splitext(basename(args.model_path))[0] + '_'
+                    + str(int(time())))
+    else:
+        filepath = args.store_name
     if (not args.store_predictions and len(y) != 0):
         results = model.evaluate(generator)
     else:
-        predicted = predict(
-            model, generator,
-            True, args.classes, return_data=True, store_x=True)
-        if (not args.store_name):
-            filepath = (splitext(basename(args.model_path))[0] + '_'
-                        + str(int(time())))
+        if (not args.export_seq_vectors):
+            predicted = predict(
+                model, generator,
+                True, args.classes, return_data=True, store_x=True)
+            pickle.dump({'classes': args.classes, 'x': predicted['x'],
+                         'y': predicted['data'][0], 'preds': predicted['data'][1]},
+                        open(filepath + '.pkl', 'wb'), protocol=4)
+            results = [*zip(predicted['metrics_names'], predicted['metrics'])]
         else:
-            filepath = args.store_name
-        pickle.dump({'classes': args.classes, 'x': predicted['x'],
-                     'y': predicted['data'][0], 'preds': predicted['data'][1]},
-                    open(filepath + '.pkl', 'wb'), protocol=4)
-        results = [*zip(predicted['metrics_names'], predicted['metrics'])]
+            predict_g = PredictGenerator(generator, store_x=False)
+            model_export = Model(model.inputs, model.get_layer(name='NSP-Dense').output)
+            preds = model_export.predict(predict_g, verbose=1)
+            y = predict_g.get_targets()[:len(preds)] # in case not everything was predicted
+            pickle.dump({'classes': args.classes,
+                         'y': y, 'preds': preds},
+                        open(filepath + '.pkl', 'wb'), protocol=4)
+            results = None
     print('results:', results)
