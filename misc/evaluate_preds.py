@@ -4,8 +4,9 @@ import pickle
 import numpy as np
 import matplotlib.pyplot as plt
 from Bio.SeqIO import parse
-from re import sub
+from re import sub, findall
 from os.path import splitext, basename
+from tqdm import tqdm
 
 
 # NOTE: also included in evaluation.ipynb
@@ -27,9 +28,9 @@ def bar_plot_classes(loaded):
     plt.legend(['sum', 'sum(argmax)'])
 
 
-def relate_eve_preds(loaded):
-    fasta = '/home/fleming/tmp/eves_hsa_all_dbs_1e-10_unamb_strand_only.fa'
-    gff = '/home/fleming/tmp/viss_in_hsa_1E-10_unamb_strand_only.gtf_7'
+def relate_eve_preds(loaded, fa, gff):
+    fasta = fa
+    gff = gff
     records = list(parse(fasta, 'fasta'))
     for xi, yi in zip(loaded['x'], loaded['preds']):
         for ri in [r for r in records if str(r.seq) == xi]:
@@ -47,6 +48,25 @@ def relate_eve_preds(loaded):
     with open(splitext(basename(fasta))[0] + '_predictions.txt', 'w') as f:
         for r in records:
             f.write(f'{r.gene_id}\t{r.pred}\n')
+
+
+def relate_eve_preds_nox(loaded, fasta, gff):
+    records = list(parse(fasta, 'fasta'))
+    for ri, yi in zip(records, loaded['preds']):
+        ri.pred = ','.join([f'{c}:{val:.2f}'
+                            for val, c in zip(yi, loaded['classes'])])
+    with open(gff) as f:
+        for line, r in tqdm(zip(f.readlines(), records)):
+            line = line.strip().split('\t')
+            l_loc = (line[0], str(int(line[3]) - 1), line[4], line[6])
+            if ((r.id.split(':')[2], *r.id.split(':')[3][:-3].split('-'),
+                 r.id[-2]) == l_loc):
+                r.gene_id = sub(r'.*gene_id "([^\"]+)".*', r'\1',
+                                ''.join(line))
+    with open(splitext(basename(fasta))[0] + '_predictions.txt', 'w') as f:
+        for r in records:
+            f.write(f'{r.gene_id}\t{r.pred}\n')
+    return records
 
 
 # NOTE: also included in evaluation.ipynb
@@ -78,7 +98,18 @@ if __name__ == '__main__':
     bar_plot_classes(eves)
     # plt.show()
     plt.savefig('eve_preds_all.svg')
-    relate_eve_preds(eves)
+    relate_eve_preds(
+        eves, '/home/fleming/tmp/eves_hsa_all_dbs_1e-10_unamb_strand_only.fa',
+        '/home/fleming/tmp/viss_in_hsa_1E-10_unamb_strand_only.gtf_7')
+    # EVEs new
+    eves = pickle.load(
+        open('output/predictions/eve_final_predictions_slim.pkl', 'rb'))
+    r_eve = relate_eve_preds(
+        eves, 'resources/viss_in_hsa_1E-10.gtf_all_bothstrands.fa',
+        'resources/viss_in_hsa_1E-10.gtf_all_bothstrands')
+    r_eve_unamb = [r for r in r_eve if not r.gene_id[-1] in ['+', '-']]
+    preds_unamb = np.array([list(map(
+        float, findall(r'[\d\.]+', r.pred))) for r in r_eve_unamb])
     # genes
     genes = pickle.load(open(
         'output/predictions/bert_nc_C2_ep07_finetuned_10k_genes_predictions.pkl', 'rb'))
