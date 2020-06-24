@@ -170,6 +170,9 @@ classification tasks.
   | python -m utils.test_bert finetuned_bert.h5 --fasta sequences.fa
   `----
 
+  The best-performing fine-tuned BERT models ready to use are contained
+  in the directory `resources/'.
+
   For this script `--help' provides further usage information.
 
 
