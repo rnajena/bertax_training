@@ -119,6 +119,7 @@ if __name__ == '__main__':
                         help='custom name for saved finetuned model',
                         default=None)
     parser.add_argument('--store_predictions', help=' ', action='store_true')
+    parser.add_argument('--store_train_data', help=' ', action='store_true')
     parser.add_argument('--roc_auc', help=' ', action='store_true')
     args = parser.parse_args()
     learning_rate = args.learning_rate
@@ -148,6 +149,14 @@ if __name__ == '__main__':
         x, y, test_size=0.2)
     f_train_x, f_val_x, f_train_y, f_val_y = train_test_split(
         f_train_x, f_train_y, test_size=0.05)
+    if (args.save_train_data):
+        from datetime import datetime
+        time_str = datetime.now().strftime('%Y%m%d_%H-%M-%S')
+        for kind, x, y in [('train', f_train_x, f_train_y), ('val', f_val_x, f_val_y),
+                           ('test', f_test_x, f_test_y)]:
+            with open(f'{time_str}_{kind}_data.json', 'w') as f:
+                json.dump([x, y], f)
+        print('saved train/test/val data.')
     model.fit(
         FragmentGenerator(f_train_x, f_train_y, args.seq_len,
                           **generator_args),
