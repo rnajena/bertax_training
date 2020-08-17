@@ -146,9 +146,9 @@ if __name__ == '__main__':
     # loading training data
     x, y = load_fragments(args.fragments_dir, nr_seqs=args.nr_seqs)
     f_train_x, f_test_x, f_train_y, f_test_y = train_test_split(
-        x, y, test_size=0.2)
+        x, y, test_size=0.2, stratify=y)
     f_train_x, f_val_x, f_train_y, f_val_y = train_test_split(
-        f_train_x, f_train_y, test_size=0.05)
+        f_train_x, f_train_y, test_size=0.05, stratify=f_train_y)
     if (args.save_train_data):
         from datetime import datetime
         time_str = datetime.now().strftime('%Y%m%d_%H-%M-%S')

@@ -151,9 +151,9 @@ if __name__ == '__main__':
     elif (args.data_source == 'fragments'):
         x, y = load_fragments(args.root_fragments_dir, args.classes, nr_seqs=args.nr_seqs)
         f_train_x, f_test_x, f_train_y, f_test_y = train_test_split(
-            x, y, test_size=args.test_split)
+            x, y, test_size=args.test_split, stratify=y)
         f_train_x, f_val_x, f_train_y, f_val_y = train_test_split(
-            f_train_x, f_train_y, test_size=0.05)
+            f_train_x, f_train_y, test_size=0.05, stratify=f_train_y)
         generator_params = {
             'seq_len': args.max_seq_len,
             'k': args.enc_k,
