@@ -427,12 +427,16 @@ class PredictGenerator(Sequence):
 
     def __getitem__(self, idx):
         batch = self.g[idx]
-        self.targets.append((idx, batch[1]
-                             if isinstance(batch[1], np.ndarray)
-                             else batch[1][0]))
+        if (not isinstance(batch[0], np.ndarray)):
+            x = batch[0]
+            self.targets.append((idx, batch[1]
+                                 if isinstance(batch[1], np.ndarray)
+                                 else batch[1][0]))
+        else:
+            x = batch
         if (self.store_x):
-            self.x.append((idx, batch[0]))
-        return batch[0]
+            self.x.append((idx, x))
+        return x
 
     def _get_stored(self, stored):
         stored = sorted(stored, key=lambda x: x[0])
@@ -447,7 +451,8 @@ class PredictGenerator(Sequence):
             raise Exception('possibly batch missing in stored values', e)
 
     def get_targets(self):
-        return np.concatenate(self._get_stored(self.targets))
+        return (np.concatenate(self._get_stored(self.targets))
+                if len(self.targets) > 0 else [])
 
     def get_x(self):
         if (not self.store_x):

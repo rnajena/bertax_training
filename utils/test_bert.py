@@ -29,7 +29,6 @@ def parse_arguments():
     parser.add_argument('--store_name', default=None, help=' ')
     parser.add_argument('--fasta', default=None,
                         help='fasta to load if source=fasta')
-    parser.add_argument('--conf_matrix', action='store_true', help=' ')
     parser.add_argument('--seq_len', type=int, default=502,
                         help='fixed length for all sequences')
     parser.add_argument('--seq_len_like', default=None,
@@ -43,6 +42,8 @@ def parse_arguments():
                         help='nr of sequences to use per class')
     parser.add_argument('--batch_size', default=32, type=int,
                         help=' ')
+    parser.add_argument('--roc_auc', action='store_true',
+                        help='compute ROC AUC values')
     parser.add_argument('--root_fa_dir', help=' ',
                         default=PARAMS['data']['root_fa_dir'][1])
     parser.add_argument('--from_cache', help=' ',
@@ -58,6 +59,8 @@ def parse_arguments():
     parser.add_argument('--stride', help=' ', default=3, type=int)
     parser.add_argument('--export_seq_vectors', help=' ', action='store_true')
     args = parser.parse_args()
+    if (args.fasta is not None):
+        args.source = 'fasta'
     return args
 
 
@@ -128,24 +131,24 @@ if __name__ == '__main__':
                     + str(int(time())))
     else:
         filepath = args.store_name
-    if (not args.store_predictions and len(y) != 0):
-        results = model.evaluate(generator)
-    else:
-        if (not args.export_seq_vectors):
-            predicted = predict(
-                model, generator,
-                True, args.classes, return_data=True, store_x=True)
+    if (not args.export_seq_vectors):
+        predicted = predict(
+            model, generator, args.roc_auc, args.classes, return_data=True,
+            store_x=True)
+        if (args.store_predictions):
             pickle.dump({'classes': args.classes, 'x': predicted['x'],
-                         'y': predicted['data'][0], 'preds': predicted['data'][1]},
+                         'y': predicted['data'][0],
+                         'preds': predicted['data'][1]},
                         open(filepath + '.pkl', 'wb'), protocol=4)
-            results = [*zip(predicted['metrics_names'], predicted['metrics'])]
-        else:
-            predict_g = PredictGenerator(generator, store_x=False)
-            model_export = Model(model.inputs, model.get_layer(name='NSP-Dense').output)
-            preds = model_export.predict(predict_g, verbose=1)
-            y = predict_g.get_targets()[:len(preds)] # in case not everything was predicted
+        results = [*zip(predicted['metrics_names'], predicted['metrics'])]
+    else:
+        predict_g = PredictGenerator(generator, store_x=False)
+        model_export = Model(model.inputs, model.get_layer(name='NSP-Dense').output)
+        preds = model_export.predict(predict_g, verbose=1)
+        y = predict_g.get_targets()[:len(preds)] # in case not everything was predicted
+        if (args.store_predictions):
             pickle.dump({'classes': args.classes,
                          'y': y, 'preds': preds},
                         open(filepath + '.pkl', 'wb'), protocol=4)
-            results = None
+        results = None
     print('results:', results)

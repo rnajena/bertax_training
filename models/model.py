@@ -88,12 +88,12 @@ PARAMS = {'nns':
            'cache_batches': (bool, True),
            'cache_seq_limit': (int, None),
            'root_fa_dir':
-           (str, '/home/lo63tor/master/sequences/dna_sequences/'),
+           (str, 'sequences'),
            'root_fragments_dir':
-           (str, '/home/lo63tor/master/dna_class/output/genomic_fragments'),
+           (str, 'fragments'),
            'file_names_cache':
            (str,
-            '/home/lo63tor/master/sequences/dna_sequences/files.json'),
+            'sequences/files.json'),
            'enc_method':
            (str, 'words2index', None, '',
             ['words2index', 'words2onehot', 'words2vec']),
