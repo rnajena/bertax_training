@@ -92,85 +92,94 @@ def add_y_text(x, y, y_offset=0.02, prec=3):
 
 
 if __name__ == '__main__':
-    # EVEs
+    # # EVEs
+    # eves = pickle.load(
+    #     open('output/predictions/bert_nc_C2_ep07_finetuned_eve_predictions.pkl', 'rb'))
+    # bar_plot_classes(eves)
+    # # plt.show()
+    # plt.savefig('eve_preds_all.svg')
+    # relate_eve_preds(
+    #     eves, '/home/fleming/tmp/eves_hsa_all_dbs_1e-10_unamb_strand_only.fa',
+    #     '/home/fleming/tmp/viss_in_hsa_1E-10_unamb_strand_only.gtf_7')
+    # # EVEs new
+    # eves = pickle.load(
+    #     open('output/predictions/eve_final_predictions_slim.pkl', 'rb'))
+    # r_eve = relate_eve_preds(
+    #     eves, 'resources/viss_in_hsa_1E-10.gtf_all_bothstrands.fa',
+    #     'resources/viss_in_hsa_1E-10.gtf_all_bothstrands')
+    # r_eve_unamb = [r for r in r_eve if not r.gene_id[-1] in ['+', '-']]
+    # preds_unamb = np.array([list(map(
+    #     float, findall(r'[\d\.]+', r.pred))) for r in r_eve_unamb])
+    # EVEs new new
     eves = pickle.load(
-        open('output/predictions/bert_nc_C2_ep07_finetuned_eve_predictions.pkl', 'rb'))
-    bar_plot_classes(eves)
-    # plt.show()
-    plt.savefig('eve_preds_all.svg')
-    relate_eve_preds(
-        eves, '/home/fleming/tmp/eves_hsa_all_dbs_1e-10_unamb_strand_only.fa',
-        '/home/fleming/tmp/viss_in_hsa_1E-10_unamb_strand_only.gtf_7')
-    # EVEs new
-    eves = pickle.load(
-        open('output/predictions/eve_final_predictions_slim.pkl', 'rb'))
-    r_eve = relate_eve_preds(
-        eves, 'resources/viss_in_hsa_1E-10.gtf_all_bothstrands.fa',
-        'resources/viss_in_hsa_1E-10.gtf_all_bothstrands')
+        open('output/predictions/eve_predictions_new_slim.pkl', 'rb'))
+    r_eve = relate_eve_preds_nox(
+        eves, 'output/predictions/viss_in_hsa_1E-10.gtf_all_new_bothstrands.fa',
+        'output/predictions/viss_in_hsa_1E-10.gtf_all_new_bothstrands')
     r_eve_unamb = [r for r in r_eve if not r.gene_id[-1] in ['+', '-']]
     preds_unamb = np.array([list(map(
         float, findall(r'[\d\.]+', r.pred))) for r in r_eve_unamb])
-    # genes
-    genes = pickle.load(open(
-        'output/predictions/bert_nc_C2_ep07_finetuned_10k_genes_predictions.pkl', 'rb'))
-    plot_conf_matrix(genes)
-    plt.savefig('nc_gene_preds.svg')
-    # leave out 10k clades
-    from models.model import PARAMS
-    classes = PARAMS['data']['classes'][1]
-    lo = {c: pickle.load(open(f'output/predictions/10k_clades_{c}_predictions.pkl', 'rb'))
-          for c in classes}
-    # individual CMs
-    for c in classes:
-        plot_conf_matrix(lo[c], c)
-        plt.savefig('10kclades_' + c + '.svg')
-    # combined CMs
-    assert all(lo[c]['classes'] == lo['Viruses']['classes'] for c in classes)
-    lo_combined = {'classes': lo['Viruses']['classes'], 'preds': [], 'y': []}
-    for c in classes:
-        lo_combined['preds'].extend(lo[c]['preds'])
-        lo_combined['y'].extend([lo_combined['classes'].index(c)]
-                                * len(lo[c]['preds']))
-    assert len(lo_combined['preds']) == len(lo_combined['y'])
-    plot_conf_matrix(lo_combined)
-    plt.savefig('10kclades.svg')
-    # -> not too useful
-    # bar plot
-    cms = {c: plot_conf_matrix(lo[c], c, perc=False, rounded=False)
-           / len(lo[c]['preds']) for c in classes}
-    base_acc = 0.8640351295471191 # from /ssh:ara:/home/lo63tor/slurm/filter_10k_clades:98224
-    x = ['base'] + classes
-    y = [base_acc] + [float(cms[c][c]) for c in classes]
-    plt.clf()
-    plt.bar(x, y, color=['C1'] + ['C0'] * len(classes))
-    add_y_text(x, y, 0, prec=2)
-    plt.axhline(base_acc, ls='--', c='C1')
-    fig = plt.gcf()
-    size = fig.get_size_inches()
-    fig.set_size_inches([size[0] + 2, size[1]])
-    # plt.show()
-    plt.savefig('10kclades_bar.svg')
-    # genes ROC
-    from sklearn.metrics import roc_auc_score
-    roc_auc_score(genes['y'][:len(genes['preds'])], genes['preds'],
-                  multi_class='ovo')
-    from sklearn.metrics import roc_curve, auc
-    from sklearn.preprocessing import label_binarize
-    from scipy import interp
-    from sklearn.metrics import roc_auc_score
-    plot_roc(genes['y'], genes['preds'], genes['classes'])
-    roc = compute_roc(genes['y'], genes['preds'], genes['classes'])
-    from sklearn.metrics import accuracy_score
-    y = label_binarize(genes['y'][:len(genes['preds'])], classes=range(len(genes['classes'])))
-    accuracy_score(genes['y'][:len(genes['preds'])], list(map(np.argmax, genes['preds'])))
+    # # genes
+    # genes = pickle.load(open(
+    #     'output/predictions/bert_nc_C2_ep07_finetuned_10k_genes_predictions.pkl', 'rb'))
+    # plot_conf_matrix(genes)
+    # plt.savefig('nc_gene_preds.svg')
+    # # leave out 10k clades
+    # from models.model import PARAMS
+    # classes = PARAMS['data']['classes'][1]
+    # lo = {c: pickle.load(open(f'output/predictions/10k_clades_{c}_predictions.pkl', 'rb'))
+    #       for c in classes}
+    # # individual CMs
+    # for c in classes:
+    #     plot_conf_matrix(lo[c], c)
+    #     plt.savefig('10kclades_' + c + '.svg')
+    # # combined CMs
+    # assert all(lo[c]['classes'] == lo['Viruses']['classes'] for c in classes)
+    # lo_combined = {'classes': lo['Viruses']['classes'], 'preds': [], 'y': []}
+    # for c in classes:
+    #     lo_combined['preds'].extend(lo[c]['preds'])
+    #     lo_combined['y'].extend([lo_combined['classes'].index(c)]
+    #                             * len(lo[c]['preds']))
+    # assert len(lo_combined['preds']) == len(lo_combined['y'])
+    # plot_conf_matrix(lo_combined)
+    # plt.savefig('10kclades.svg')
+    # # -> not too useful
+    # # bar plot
+    # cms = {c: plot_conf_matrix(lo[c], c, perc=False, rounded=False)
+    #        / len(lo[c]['preds']) for c in classes}
+    # base_acc = 0.8640351295471191 # from /ssh:ara:/home/lo63tor/slurm/filter_10k_clades:98224
+    # x = ['base'] + classes
+    # y = [base_acc] + [float(cms[c][c]) for c in classes]
+    # plt.clf()
+    # plt.bar(x, y, color=['C1'] + ['C0'] * len(classes))
+    # add_y_text(x, y, 0, prec=2)
+    # plt.axhline(base_acc, ls='--', c='C1')
+    # fig = plt.gcf()
+    # size = fig.get_size_inches()
+    # fig.set_size_inches([size[0] + 2, size[1]])
+    # # plt.show()
+    # plt.savefig('10kclades_bar.svg')
+    # # genes ROC
+    # from sklearn.metrics import roc_auc_score
+    # roc_auc_score(genes['y'][:len(genes['preds'])], genes['preds'],
+    #               multi_class='ovo')
+    # from sklearn.metrics import roc_curve, auc
+    # from sklearn.preprocessing import label_binarize
+    # from scipy import interp
+    # from sklearn.metrics import roc_auc_score
+    # plot_roc(genes['y'], genes['preds'], genes['classes'])
+    # roc = compute_roc(genes['y'], genes['preds'], genes['classes'])
+    # from sklearn.metrics import accuracy_score
+    # y = label_binarize(genes['y'][:len(genes['preds'])], classes=range(len(genes['classes'])))
+    # accuracy_score(genes['y'][:len(genes['preds'])], list(map(np.argmax, genes['preds'])))
 
-    import tensorflow as tf
-    m = tf.keras.metrics.CategoricalAccuracy()
-    m.update_state(y, genes['preds'])
-    m = tf.keras.losses.CategoricalCrossentropy()
-    m(y, genes['preds']).numpy()
-    from misc.visuals import accuracy, loss
-    print(loss(label_binarize(genes['y'][:len(genes['preds'])],
-                            classes=range(len(genes['classes']))),
-                   genes['preds']))
-    m.result().numpy()
+    # import tensorflow as tf
+    # m = tf.keras.metrics.CategoricalAccuracy()
+    # m.update_state(y, genes['preds'])
+    # m = tf.keras.losses.CategoricalCrossentropy()
+    # m(y, genes['preds']).numpy()
+    # from misc.visuals import accuracy, loss
+    # print(loss(label_binarize(genes['y'][:len(genes['preds'])],
+    #                         classes=range(len(genes['classes']))),
+    #                genes['preds']))
+    # m.result().numpy()
