@@ -45,6 +45,30 @@ def generate_bert_with_pretrained(pretrained_path, nr_classes=4):
     return model_fine
 
 
+def generate_bert_with_pretrained_multi_tax(pretrained_path, nr_classes=(4, 30, 100)):
+    """get model ready for fine-tuning and the maximum input length"""
+    # see https://colab.research.google.com/github/CyberZHG/keras-bert
+    # /blob/master/demo/tune/keras_bert_classification_tpu.ipynb
+    custom_objects = {'GlorotNormal': keras.initializers.glorot_normal,
+                      'GlorotUniform': keras.initializers.glorot_uniform}
+    custom_objects.update(keras_bert.get_custom_objects())
+    model = keras.models.load_model(pretrained_path, compile=False,
+                                    custom_objects=custom_objects)
+    inputs = model.inputs[:2]
+    nsp_dense_layer = model.get_layer(name='NSP-Dense').output
+
+    superkingdoms, families, species = nr_classes
+    superkingdoms_out = keras.layers.Dense(superkingdoms, activation='softmax',name="superkingdoms_softmax")(nsp_dense_layer)
+    families_in = keras.layers.concatenate([nsp_dense_layer,superkingdoms_out])
+    families_out = keras.layers.Dense(families,activation='softmax',name="families_softmax")(families_in)
+    species_in = keras.layers.concatenate([nsp_dense_layer,families_out])
+    species_out = keras.layers.Dense(species,activation='softmax',name="species_softmax")(species_in)
+    out_layer = keras.layers.concatenate([superkingdoms_out,families_out,species_out])
+
+    model_fine = keras.Model(inputs=inputs, outputs=out_layer)
+    return model_fine
+
+
 def seq2tokens(seq, token_dict, seq_length=250, max_length=None,
                k=3, stride=3, window=True, seq_len_like=None):
     """transforms raw sequence into list of tokens to be used for
