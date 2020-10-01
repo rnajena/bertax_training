@@ -1,15 +1,26 @@
-import keras
+import os
+os.environ['TF_KERAS']="1"
+import tensorflow as tf
+from tensorflow import keras
 from preprocessing.process_inputs import ALPHABET
 from preprocessing.generate_data import DataSplit
 from models.model import PARAMS
-from models.bert_utils import get_token_dict, generate_bert_with_pretrained
+from models.bert_utils import get_token_dict, generate_bert_with_pretrained, generate_bert_with_pretrained_multi_tax
 from models.bert_utils import seq2tokens, process_bert_tokens_batch
 from models.bert_utils import load_bert, predict
 import argparse
 from os.path import splitext
-from keras.callbacks import ModelCheckpoint, TensorBoard, EarlyStopping
+from tensorflow.keras.callbacks import ModelCheckpoint, TensorBoard, EarlyStopping
 from logging import warning
 
+from tensorflow.keras.mixed_precision import experimental as mixed_precision
+policy = mixed_precision.Policy('mixed_float16')
+mixed_precision.set_policy(policy)
+print('Compute dtype: %s' % policy.compute_dtype)
+print('Variable dtype: %s' % policy.variable_dtype)
+
+print("Num GPUs Available: ", len(tf.config.experimental.list_physical_devices('GPU')))
+mirrored_strategy = tf.distribute.MirroredStrategy()
 
 def parse_arguments():
     parser = argparse.ArgumentParser(
@@ -47,20 +58,22 @@ def parse_arguments():
 
 if __name__ == '__main__':
     args = parse_arguments()
-    if (not args.finetuned):
-        model_fine = generate_bert_with_pretrained(
-            args.pretrained_path, len(args.classes))
-    else:
-        model_fine = load_bert(args.pretrained_path)
-    max_length = model_fine.input_shape[0][1]
-    if (args.seq_len > max_length):
-        warning(f'desired seq len ({args.seq_len}) is higher than possible ({max_length})'
-                f'setting seq len to {max_length}')
-        args.seq_len = max_length
-    model_fine.summary()
-    model_fine.compile(keras.optimizers.Adam(args.learning_rate),
-                       loss='categorical_crossentropy',
-                       metrics=['accuracy'])
+    with mirrored_strategy.scope():
+        if (not args.finetuned):
+            model_fine = generate_bert_with_pretrained(
+                args.pretrained_path, len(args.classes))
+            # model_fine, max_length = generate_bert_with_pretrained_multi_tax(args.pretrained_path, (4,30,100))
+        else:
+            model_fine = load_bert(args.pretrained_path)
+        max_length = model_fine.input_shape[0][1]
+        if (args.seq_len > max_length):
+            warning(f'desired seq len ({args.seq_len}) is higher than possible ({max_length})'
+                    f'setting seq len to {max_length}')
+            args.seq_len = max_length
+        model_fine.summary()
+        model_fine.compile(keras.optimizers.Adam(args.learning_rate),
+                           loss='categorical_crossentropy',
+                           metrics=['accuracy'])
     token_dict = get_token_dict(args.alphabet, args.k)
     # DataGenerator
     split = DataSplit(root_fa_dir=args.root_fa_dir, nr_seqs=args.nr_seqs,
@@ -77,7 +90,7 @@ if __name__ == '__main__':
         batch_size=args.batch_size,
         custom_encode_sequence=custom_encode_sequence,
         process_batch_function=process_bert_tokens_batch,
-        enc_k=args.k, enc_stride=args.stride)
+        enc_k=args.k, enc_stride=args.stride, root_fa_dir=args.root_fa_dir)
 
     # for long run
     filepath1 = splitext(args.pretrained_path)[0] + "model.best.acc.hdf5"
@@ -86,8 +99,12 @@ if __name__ == '__main__':
                                   save_weights_only=False, mode='max')
     checkpoint2 = ModelCheckpoint(filepath2, monitor='val_loss', verbose=1, save_best_only=True,
                                   save_weights_only=False, mode='min')
-    checkpoint3 = EarlyStopping('val_accuracy', min_delta=0, patience=args.epochs // 2, restore_best_weights=True)
-    callbacks_list = [checkpoint1, checkpoint2, checkpoint3]
+    checkpoint3 = EarlyStopping('val_accuracy', min_delta=0, patience=2, restore_best_weights=True)
+    tensorboard_callback = TensorBoard(log_dir="./logs/run_repeated_undersampling", histogram_freq=1, write_graph=True,
+                                       write_images=True,update_freq=100,embeddings_freq=1)
+
+    # callbacks_list = [checkpoint1, checkpoint2, checkpoint3]
+    callbacks_list = [checkpoint1, checkpoint2, checkpoint3,tensorboard_callback]
 
     try:
         model_fine.fit(train_g, validation_data=val_g,callbacks=callbacks_list,verbose=1,
