@@ -94,5 +94,26 @@ class TaxID_entry():
         self.phylo_names_path = phylo_names_path
         self.genbank_common_names_path = genbank_common_names_path
 
+
+class TaxidLineage:
+    def __init__(self):
+        from ete3 import NCBITaxa
+        self.ncbi = NCBITaxa()
+
+    def _get_d_rank(self, d, rank):
+        if (rank not in d.values()):
+            return (None, 'unknown')
+        taxid = [k for k, v in d.items() if v == rank]
+        name = self.ncbi.translate_to_names(taxid)[0]
+        return (taxid[0], name if isinstance(name, str) else 'unknown')
+
+    def get_ranks(self, taxid, ranks=['superkingdom', 'kingdom', 'phylum', 'family']):
+        d = self.ncbi.get_rank(self.ncbi.get_lineage(taxid))
+        return {r: self._get_d_rank(d, r) for r in ranks}
+        
+    
+        
+        
+
 if __name__ == "__main__":
     parent_dict, scientific_names, common_names, phylo_names, genbank_common_name = get_dicts()

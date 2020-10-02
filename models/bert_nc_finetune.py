@@ -206,10 +206,10 @@ class FragmentGenerator_multi_tax(Sequence):
                     np.array([_[1] for _ in batch_x])]
 
 
-def get_classes_and_weights_multi_tax(species_list):
-    from utils.tax_entry import TaxDB
-    taxDB = TaxDB(data_dir="/home/go96bix/projects/read_class/comparison/kraken2/taxonomy")
-
+def get_classes_and_weights_multi_tax(species_list, unknown_thr=10_000):
+    from utils.tax_entry import TaxidLineage
+    tlineage = TaxidLineage()
+    
     classes = dict()
     weight_classes = dict()
     super_king_dict = dict()
@@ -218,37 +218,14 @@ def get_classes_and_weights_multi_tax(species_list):
     num_entries = len(species_list)
 
     for taxid in species_list:
-        try:
-            entry = taxDB.search_from_id(taxid)
-            try:
-                superkingdom_index = entry.phylo_names_path.index("superkingdom")
-                superkingdom = entry.scientific_names_path[superkingdom_index]  # get names
-            except:
-                superkingdom = 'unknown'
-                # print(f"superkingdom  = unknown")
+        ranks = tlineage.get_ranks(taxid, ranks=['superkingdom', 'kingdom', 'family'])
 
-            try:
-                kingdom_index = entry.phylo_names_path.index("kingdom")
-                kingdom = entry.scientific_names_path[kingdom_index]  # get names
-            except:
-                kingdom = 'unknown'
-                # print("kingdom = unknown")
-
-            try:
-                family_index = entry.phylo_names_path.index("family")
-                family = entry.scientific_names_path[family_index]  # get names
-            except:
-                family = 'unknown'
-                # print("family = unknown")
-        except:
-            superkingdom, kingdom, family = 'unknown', 'unknown', 'unknown'
-
-        num_same_superking = super_king_dict.get(superkingdom, 0) + 1
-        super_king_dict.update({superkingdom: num_same_superking})
-        num_same_king = king_dict.get(kingdom,0) + 1
-        king_dict.update({kingdom:num_same_king})
-        num_same_family = family_dict.get(family,0) + 1
-        family_dict.update({family:num_same_family})
+        num_same_superking = super_king_dict.get(ranks['superkingdom'][1], 0) + 1
+        super_king_dict.update({ranks['superkingdom'][1]: num_same_superking})
+        num_same_king = king_dict.get(ranks['kingdom'][1],0) + 1
+        king_dict.update({ranks['kingdom'][1]:num_same_king})
+        num_same_family = family_dict.get(ranks['family'][1],0) + 1
+        family_dict.update({ranks['family'][1]:num_same_family})
 
 
     for index, dict_ in enumerate([super_king_dict,king_dict,family_dict]):
@@ -256,7 +233,7 @@ def get_classes_and_weights_multi_tax(species_list):
         unknown = 0
         weight_classes_tax_i = dict()
         for key, value in dict_.items():
-            if value < 1000:
+            if value < unknown_thr:
                 unknown += value
                 classes_tax_i.pop(key)
             else:
@@ -267,11 +244,12 @@ def get_classes_and_weights_multi_tax(species_list):
         classes_tax_i.update({'unknown': unknown})
         classes.update({['superkingdom','kingdom','family'][index]: classes_tax_i})
 
-        weight = num_entries/unknown
+        weight = num_entries/unknown if unknown != 0 else 1
         weight_classes_tax_i.update({'unknown': weight})
         weight_classes.update({['superkingdom', 'kingdom', 'family'][index]: weight_classes_tax_i})
 
     return classes, weight_classes
+
 
 def get_fine_model(pretrained_model_file):
     # with mirrored_strategy.scope():
