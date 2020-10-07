@@ -57,13 +57,25 @@ def generate_bert_with_pretrained_multi_tax(pretrained_path, nr_classes=(4, 30, 
     inputs = model.inputs[:2]
     nsp_dense_layer = model.get_layer(name='NSP-Dense').output
 
-    superkingdoms, families, species = nr_classes
-    superkingdoms_out = keras.layers.Dense(superkingdoms, activation='softmax',name="superkingdoms_softmax")(nsp_dense_layer)
-    families_in = keras.layers.concatenate([nsp_dense_layer,superkingdoms_out])
-    families_out = keras.layers.Dense(families,activation='softmax',name="families_softmax")(families_in)
-    species_in = keras.layers.concatenate([nsp_dense_layer,families_out])
-    species_out = keras.layers.Dense(species,activation='softmax',name="species_softmax")(species_in)
-    out_layer = keras.layers.concatenate([superkingdoms_out,families_out,species_out])
+    out_layer = []
+    previous_taxa = [nsp_dense_layer]
+    for index, nr_classes_tax_i in enumerate(nr_classes):
+        if index != 0:
+            tax_i_in = keras.layers.concatenate(previous_taxa)
+        else:
+            tax_i_in = nsp_dense_layer
+        tax_i_out = keras.layers.Dense(nr_classes_tax_i, activation='softmax')(tax_i_in)
+        previous_taxa.append(tax_i_out)
+        out_layer.append(tax_i_out)
+
+
+    # superkingdoms, families, species = nr_classes
+    # superkingdoms_out = keras.layers.Dense(superkingdoms, activation='softmax',name="superkingdoms_softmax")(nsp_dense_layer)
+    # families_in = keras.layers.concatenate([nsp_dense_layer,superkingdoms_out])
+    # families_out = keras.layers.Dense(families,activation='softmax',name="families_softmax")(families_in)
+    # species_in = keras.layers.concatenate([nsp_dense_layer,families_out])
+    # species_out = keras.layers.Dense(species,activation='softmax',name="species_softmax")(species_in)
+    # # out_layer = keras.layers.concatenate([superkingdoms_out,families_out,species_out])
 
     model_fine = keras.Model(inputs=inputs, outputs=out_layer)
     return model_fine

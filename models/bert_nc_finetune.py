@@ -16,16 +16,27 @@ from typing import List, Optional
 from logging import warning
 import pickle
 from tensorflow.keras.mixed_precision import experimental as mixed_precision
+from tensorflow.keras.callbacks import ModelCheckpoint, TensorBoard, EarlyStopping
+from os.path import splitext
+import pandas as pd
+
 policy = mixed_precision.Policy('mixed_float16')
 mixed_precision.set_policy(policy)
 print('Compute dtype: %s' % policy.compute_dtype)
 print('Variable dtype: %s' % policy.variable_dtype)
 
-
 print("Num GPUs Available: ", len(tf.config.experimental.list_physical_devices('GPU')))
 mirrored_strategy = tf.distribute.MirroredStrategy()
 
 classes = PARAMS['data']['classes'][1]
+
+
+def load_dataset(filepath):
+    df = pd.read_csv(filepath, sep="\t")
+    x = df["x"]
+    y = df["y"]
+    y_species = df["tax_id"]
+    return x, y, y_species
 
 
 def load_fragments(fragments_dir, shuffle_=True, balance=True, nr_seqs=None):
@@ -35,23 +46,23 @@ def load_fragments(fragments_dir, shuffle_=True, balance=True, nr_seqs=None):
         fragments.append((class_, json.load(open(os.path.join(
             fragments_dir, f'{class_}_fragments.json')))))
         species_list.append([int(line.strip()) for line in
-                        open(os.path.join(fragments_dir, f'{class_}_species_picked.txt')).readlines()])
+                             open(os.path.join(fragments_dir, f'{class_}_species_picked.txt')).readlines()])
     nr_seqs_max = min(len(_[1]) for _ in fragments)
     if (nr_seqs is None or nr_seqs > nr_seqs_max):
         nr_seqs = nr_seqs_max
     x = []
-    y = []
-    y_species = []
+    y = np.array([])
+    y_species = np.array([], dtype=np.int)
 
     for index, fragments_i in enumerate(fragments):
         class_, class_fragments = fragments_i
         if not balance:
             x.extend(class_fragments)
-            y.extend([class_] * len(class_fragments))
-            y_species.extend(species_list[index])
-
+            y = np.append(y, [class_] * len(class_fragments))
+            y_species = np.append(y_species, species_list[index])
+            gc.collect()
         else:
-            x_help = list(zip(class_fragments,species_list[index]))
+            x_help = list(zip(class_fragments, species_list[index]))
             # x.extend(sample(class_fragments, nr_seqs))
             x_help = sample(x_help, nr_seqs)
             x_help, y_species_help = zip(*x_help)
@@ -66,7 +77,7 @@ def load_fragments(fragments_dir, shuffle_=True, balance=True, nr_seqs=None):
         x, y, y_species = zip(*to_shuffle)
     print(f'{len(x)} fragments loaded in total; '
           f'balanced={balance}, shuffle_={shuffle_}, nr_seqs={nr_seqs}')
-    return x, y, y_species
+    return np.array(x), np.array(y), np.array(y_species)
 
 
 @dataclass
@@ -82,7 +93,6 @@ class FragmentGenerator(Sequence):
     ['Viruses', 'Archaea', 'Bacteria', 'Eukaryota'])
     seq_len_like: Optional[np.array] = None
     window: bool = False
-
 
     def __post_init__(self):
         self.class_vectors = get_class_vectors(self.classes)
@@ -121,6 +131,7 @@ class FragmentGenerator_multi_tax(Sequence):
     weight_classes: dict
     classes: dict
     seq_len: int
+    tax_ranks: list
     max_seq_len: Optional[int] = None
     k: int = 3
     stride: int = 3
@@ -130,49 +141,31 @@ class FragmentGenerator_multi_tax(Sequence):
 
     def get_class_vectors_multi_tax(self, taxid):
         vector = []
-        weight = 0
-        try:
-            entry = self.taxDB.search_from_id(taxid)
-            try:
-                superkingdom_index = entry.phylo_names_path.index("superkingdom")
-                superkingdom = entry.scientific_names_path[superkingdom_index]  # get names
-            except:
-                superkingdom = 'unknown'
-                # print(f"superkingdom  = unknown")
+        weight = []
 
-            try:
-                kingdom_index = entry.phylo_names_path.index("kingdom")
-                kingdom = entry.scientific_names_path[kingdom_index]  # get names
-            except:
-                kingdom = 'unknown'
-                # print("kingdom = unknown")
+        ranks = self.tlineage.get_ranks(taxid, ranks=self.tax_ranks)
 
-            try:
-                family_index = entry.phylo_names_path.index("family")
-                family = entry.scientific_names_path[family_index]  # get names
-            except:
-                family = 'unknown'
-                # print("family = unknown")
-        except:
-            superkingdom, kingdom, family = 'unknown', 'unknown', 'unknown'
-
-        # calc vector per tax and concatenate
+        # calc vector per tax and append
         # if class not in dict use vector of unknown class
-        vector.extend(self.class_vectors['superkingdom'].get(superkingdom,self.class_vectors['superkingdom']['unknown']))
-        vector.extend(self.class_vectors['kingdom'].get(kingdom,self.class_vectors['kingdom']['unknown']))
-        vector.extend(self.class_vectors['family'].get(family,self.class_vectors['family']['unknown']))
+        for index, class_tax_i in enumerate(ranks):
+            vector.append(self.class_vectors[self.tax_ranks[index]].get(ranks[class_tax_i][1],
+                                                                        self.class_vectors[self.tax_ranks[index]][
+                                                                            'unknown']))
 
         # calc sample weight
-        weight += self.weight_classes['superkingdom'].get(superkingdom,self.weight_classes['superkingdom']['unknown'])
-        weight += self.weight_classes['kingdom'].get(kingdom,self.weight_classes['kingdom']['unknown'])
-        weight += self.weight_classes['family'].get(family,self.weight_classes['family']['unknown'])
-
+        for index, class_tax_i in enumerate(ranks):
+            weight.append(self.weight_classes[self.tax_ranks[index]].get(ranks[class_tax_i][1],
+                                                                         self.weight_classes[self.tax_ranks[index]][
+                                                                             'unknown']))
 
         return vector, weight
 
     def __post_init__(self):
-        from utils.tax_entry import TaxDB
-        self.taxDB = TaxDB(data_dir="/home/go96bix/projects/read_class/comparison/kraken2/taxonomy")
+        # from utils.tax_entry import TaxDB
+        # self.taxDB = TaxDB(data_dir="/mnt/fass2/projects/fm_read_classification_comparison/taxonomy")
+        from utils.tax_entry import TaxidLineage
+        tlineage = TaxidLineage()
+        self.tlineage = tlineage
         self.class_vectors = dict()
         for tax_rank in self.classes:
             self.class_vectors.update({tax_rank: get_class_vectors(self.classes[tax_rank])})
@@ -195,40 +188,45 @@ class FragmentGenerator_multi_tax(Sequence):
                    for seq in batch_fragments]
         if (self.y is not None and len(self.y) != 0):
             batch_classes = self.y_species[idx * self.batch_size:
-                                   (idx + 1) * self.batch_size]
+                                           (idx + 1) * self.batch_size]
             batch_y, weights = zip(*[self.get_class_vectors_multi_tax(taxid) for taxid in batch_classes])
-            X = [np.array([_[0] for _ in batch_x]),np.array([_[1] for _ in batch_x])]
-            y = np.array(batch_y)
-            weights = np.array(weights)
-            return (X, y, weights)
+            # batch_y, weights = zip(*[self.get_class_vectors_multi_tax(taxid) for taxid in batch_classes])
+            X = [np.array([_[0] for _ in batch_x]), np.array([_[1] for _ in batch_x])]
+            y = []
+            weights_y = []
+            for index in range(len(self.tax_ranks)):
+                y.append(np.array([_[index] for _ in batch_y]))
+                weights_y.append(np.array([_[index] for _ in weights]))
+            return (X, y, weights_y)
         else:
             return [np.array([_[0] for _ in batch_x]),
                     np.array([_[1] for _ in batch_x])]
 
 
-def get_classes_and_weights_multi_tax(species_list, unknown_thr=10_000):
+def get_classes_and_weights_multi_tax(species_list, tax_ranks=['superkingdom', 'kingdom', 'family'],
+                                      unknown_thr=10_000):
     from utils.tax_entry import TaxidLineage
     tlineage = TaxidLineage()
-    
+
     classes = dict()
     weight_classes = dict()
-    super_king_dict = dict()
-    king_dict = dict()
-    family_dict = dict()
+    tax_ranks_dict = dict()
     num_entries = len(species_list)
+    species_list_y = []
+    for tax_rank_i in tax_ranks:
+        tax_ranks_dict.update({tax_rank_i: dict()})
 
     for taxid in species_list:
-        ranks = tlineage.get_ranks(taxid, ranks=['superkingdom', 'kingdom', 'family'])
+        ranks = tlineage.get_ranks(taxid, ranks=tax_ranks)
+        taxid_y = []
+        for tax_rank_i in tax_ranks:
+            num_same_tax_rank_i = tax_ranks_dict[tax_rank_i].get(ranks[tax_rank_i][1], 0) + 1
+            tax_ranks_dict[tax_rank_i].update({ranks[tax_rank_i][1]: num_same_tax_rank_i})
+            taxid_y.append(ranks[tax_rank_i][1])
+        species_list_y.append(taxid_y)
 
-        num_same_superking = super_king_dict.get(ranks['superkingdom'][1], 0) + 1
-        super_king_dict.update({ranks['superkingdom'][1]: num_same_superking})
-        num_same_king = king_dict.get(ranks['kingdom'][1],0) + 1
-        king_dict.update({ranks['kingdom'][1]:num_same_king})
-        num_same_family = family_dict.get(ranks['family'][1],0) + 1
-        family_dict.update({ranks['family'][1]:num_same_family})
-
-
-    for index, dict_ in enumerate([super_king_dict,king_dict,family_dict]):
+    for index, key in enumerate(tax_ranks_dict.keys()):
+        dict_ = tax_ranks_dict[key]
         classes_tax_i = dict_.copy()
         unknown = 0
         weight_classes_tax_i = dict()
@@ -237,18 +235,22 @@ def get_classes_and_weights_multi_tax(species_list, unknown_thr=10_000):
                 unknown += value
                 classes_tax_i.pop(key)
             else:
-                weight = num_entries/value
+                weight = num_entries / value
                 weight_classes_tax_i.update({key: weight})
 
         unknown += classes_tax_i.get("unknown", 0)
         classes_tax_i.update({'unknown': unknown})
-        classes.update({['superkingdom','kingdom','family'][index]: classes_tax_i})
+        classes.update({tax_ranks[index]: classes_tax_i})
 
-        weight = num_entries/unknown if unknown != 0 else 1
+        weight = num_entries / unknown if unknown != 0 else 1
         weight_classes_tax_i.update({'unknown': weight})
-        weight_classes.update({['superkingdom', 'kingdom', 'family'][index]: weight_classes_tax_i})
+        weight_classes.update({tax_ranks[index]: weight_classes_tax_i})
 
-    return classes, weight_classes
+    species_list_y = np.array(species_list_y)
+    species_list_y = np.array([i if i in classes[tax_ranks[j]] else 'unknown' for j in range(len(tax_ranks)) for i in
+                               species_list_y[:, j]]).reshape((len(tax_ranks), -1)).swapaxes(0, 1)
+
+    return classes, weight_classes, species_list_y
 
 
 def get_fine_model(pretrained_model_file):
@@ -270,6 +272,9 @@ def get_fine_model_multi_tax(pretrained_model_file, num_classes):
                        loss='categorical_crossentropy',
                        metrics=['accuracy'])
     max_length = model_fine.input_shape[0][1]
+    tf.keras.utils.plot_model(model_fine, to_file="model.png", show_shapes=True)
+    model_fine.summary()
+
     return model_fine, max_length
 
 
@@ -296,8 +301,13 @@ if __name__ == '__main__':
     parser.add_argument('--store_train_data', help=' ', action='store_true')
     parser.add_argument('--roc_auc', help=' ', action='store_true')
     parser.add_argument('--multi_tax', help=' ', action='store_true')
+    parser.add_argument('--test_benchmark', help=' ', action='store_true')
 
     args = parser.parse_args()
+
+    tax_ranks = ["superkingdom", "phylum"]
+    print("main")
+
     learning_rate = args.learning_rate
     if (args.seq_len_like is not None):
         seq_len_dict = pickle.load(open(args.seq_len_like, 'rb'))
@@ -309,26 +319,41 @@ if __name__ == '__main__':
     else:
         seq_len_like = None
 
-    # loading training data
-    x, y, y_species = load_fragments(args.fragments_dir, nr_seqs=args.nr_seqs)
-    # TODO anpassen zu random undersampling
-    if args.multi_tax:
-        x_help = list(zip(x,y_species))
-        f_train_x, f_test_x, f_train_y, f_test_y = train_test_split(
-            x_help, y, test_size=0.2, stratify=y)
-        f_train_x, f_val_x, f_train_y, f_val_y = train_test_split(
-            f_train_x, f_train_y, test_size=0.05, stratify=f_train_y)
-        f_train_x, f_train_y_species = zip(*f_train_x)
-        f_val_x, f_val_y_species = zip(*f_val_x)
-        f_test_x, f_test_y_species = zip(*f_test_x)
+    # model, max_length = get_fine_model_multi_tax(args.pretrained_bert, num_classes=(2,17,22))
+    # exit()
+    if not args.test_benchmark:
+        # loading training data
+        x, y, y_species = load_fragments(args.fragments_dir, nr_seqs=args.nr_seqs)
 
-        classes, weight_classes = get_classes_and_weights_multi_tax(f_train_y_species)
+        if args.multi_tax:
+            x_help = list(zip(x, y_species))
+            f_train_x, f_test_x, f_train_y, f_test_y = train_test_split(
+                x_help, y, test_size=0.2, stratify=y)
+            f_train_x, f_val_x, f_train_y, f_val_y = train_test_split(
+                f_train_x, f_train_y, test_size=0.05, stratify=f_train_y)
+            f_train_x, f_train_y_species = zip(*f_train_x)
+            f_val_x, f_val_y_species = zip(*f_val_x)
+            f_test_x, f_test_y_species = zip(*f_test_x)
+
+            classes, weight_classes, species_list_y = get_classes_and_weights_multi_tax(f_train_y_species,
+                                                                                        tax_ranks=tax_ranks)
+
+        else:
+            f_train_x, f_test_x, f_train_y, f_test_y = train_test_split(
+                x, y, test_size=0.2, stratify=y)
+            f_train_x, f_val_x, f_train_y, f_val_y = train_test_split(
+                f_train_x, f_train_y, test_size=0.05, stratify=f_train_y)
 
     else:
-        f_train_x, f_test_x, f_train_y, f_test_y = train_test_split(
-            x, y, test_size=0.2, stratify=y)
-        f_train_x, f_val_x, f_train_y, f_val_y = train_test_split(
-            f_train_x, f_train_y, test_size=0.05, stratify=f_train_y)
+        f_test_x, f_test_y, f_test_y_species = load_dataset("/home/go96bix/projects/dna_class/resources/test.tsv")
+        f_train_x, f_train_y, f_train_y_species = load_dataset("/home/go96bix/projects/dna_class/resources/train.tsv")
+        f_train_x = list(zip(f_train_x, f_train_y_species))
+        f_train_x, f_val_x, f_train_y, f_val_y = train_test_split(f_train_x, f_train_y, test_size=0.05,
+                                                                  stratify=f_train_y)
+        f_train_x, f_train_y_species = zip(*f_train_x)
+        f_val_x, f_val_y_species = zip(*f_val_x)
+        classes, weight_classes, species_list_y = get_classes_and_weights_multi_tax(f_train_y_species,
+                                                                                    tax_ranks=tax_ranks)
 
     # building model
     if args.multi_tax:
@@ -347,6 +372,19 @@ if __name__ == '__main__':
         'seq_len_like': seq_len_like}
     model.summary()
 
+    filepath1 = splitext(args.pretrained_bert)[0] + "model.best.acc.hdf5"
+    filepath2 = splitext(args.pretrained_bert)[0] + "model.best.loss.hdf5"
+    checkpoint1 = ModelCheckpoint(filepath1, monitor='val_accuracy', verbose=1, save_best_only=True,
+                                  save_weights_only=False, mode='max')
+    checkpoint2 = ModelCheckpoint(filepath2, monitor='val_loss', verbose=1, save_best_only=True,
+                                  save_weights_only=False, mode='min')
+    checkpoint3 = EarlyStopping('val_accuracy', min_delta=0, patience=2, restore_best_weights=True)
+    tensorboard_callback = TensorBoard(log_dir="./logs/run_repeated_undersampling", histogram_freq=1, write_graph=True,
+                                       write_images=True, update_freq=100, embeddings_freq=1)
+
+    # callbacks_list = [checkpoint1, checkpoint2, checkpoint3]
+    callbacks_list = [checkpoint1, checkpoint2, checkpoint3, tensorboard_callback]
+
     if (args.store_train_data):
         from datetime import datetime
 
@@ -357,11 +395,17 @@ if __name__ == '__main__':
                 json.dump([x, y], f)
         print('saved train/test/val data.')
     if args.multi_tax:
-        model.fit(FragmentGenerator_multi_tax(f_train_x, f_train_y, f_train_y_species, weight_classes, seq_len=args.seq_len, classes=classes, **generator_args), epochs=args.epochs,
-                  validation_data=FragmentGenerator_multi_tax(f_val_x, f_val_y, f_val_y_species, weight_classes, seq_len=args.seq_len, classes=classes, **generator_args))
+        model.fit(
+            FragmentGenerator_multi_tax(f_train_x, f_train_y, f_train_y_species, weight_classes, seq_len=args.seq_len,
+                                        tax_ranks=tax_ranks, classes=classes, **generator_args),
+            callbacks=callbacks_list, epochs=args.epochs,
+            validation_data=FragmentGenerator_multi_tax(f_val_x, f_val_y, f_val_y_species, weight_classes,
+                                                        seq_len=args.seq_len, tax_ranks=tax_ranks, classes=classes,
+                                                        **generator_args), use_multiprocessing=False, workers=0)
     else:
-        model.fit(FragmentGenerator(f_train_x, f_train_y, args.seq_len, **generator_args), epochs=args.epochs,
-              validation_data=FragmentGenerator(f_val_x, f_val_y, args.seq_len, **generator_args))
+        model.fit(FragmentGenerator(f_train_x, f_train_y, args.seq_len, **generator_args), callbacks=callbacks_list,
+                  epochs=args.epochs,
+                  validation_data=FragmentGenerator(f_val_x, f_val_y, args.seq_len, **generator_args))
     if (args.save_name is not None):
         save_path = args.save_name + '.h5'
     else:
@@ -369,7 +413,8 @@ if __name__ == '__main__':
     model.save(save_path)
     print('testing...')
     if args.multi_tax:
-        test_g = FragmentGenerator_multi_tax(f_test_x, f_test_y, f_test_y_species, weight_classes, seq_len=args.seq_len, classes=classes, **generator_args)
+        test_g = FragmentGenerator_multi_tax(f_test_x, f_test_y, f_test_y_species, weight_classes, seq_len=args.seq_len,
+                                             classes=classes, **generator_args)
     else:
         test_g = FragmentGenerator(f_test_x, f_test_y, args.seq_len, **generator_args)
     if (args.store_predictions or args.roc_auc):
