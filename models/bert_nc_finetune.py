@@ -446,4 +446,3 @@ if __name__ == '__main__':
         result = model.evaluate(test_g)
         metrics_names = model.metrics_names
     print("test results:", *zip(metrics_names, result))
-
