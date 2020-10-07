@@ -1,4 +1,4 @@
-import keras
+from tensorflow import keras
 import keras_bert
 import tensorflow as tf
 from preprocessing.process_inputs import seq2kmers, ALPHABET
@@ -45,7 +45,7 @@ def generate_bert_with_pretrained(pretrained_path, nr_classes=4):
     return model_fine
 
 
-def generate_bert_with_pretrained_multi_tax(pretrained_path, nr_classes=(4, 30, 100)):
+def generate_bert_with_pretrained_multi_tax(pretrained_path, nr_classes=(4, 30, 100), tax_ranks=["superkingdom","phylum", "family"]):
     """get model ready for fine-tuning and the maximum input length"""
     # see https://colab.research.google.com/github/CyberZHG/keras-bert
     # /blob/master/demo/tune/keras_bert_classification_tpu.ipynb
@@ -64,7 +64,7 @@ def generate_bert_with_pretrained_multi_tax(pretrained_path, nr_classes=(4, 30, 
             tax_i_in = keras.layers.concatenate(previous_taxa)
         else:
             tax_i_in = nsp_dense_layer
-        tax_i_out = keras.layers.Dense(nr_classes_tax_i, activation='softmax')(tax_i_in)
+        tax_i_out = keras.layers.Dense(nr_classes_tax_i,name=f"{tax_ranks[index]}_out", activation='softmax')(tax_i_in)
         previous_taxa.append(tax_i_out)
         out_layer.append(tax_i_out)
 

@@ -60,15 +60,14 @@ def load_fragments(fragments_dir, shuffle_=True, balance=True, nr_seqs=None):
             x.extend(class_fragments)
             y = np.append(y, [class_] * len(class_fragments))
             y_species = np.append(y_species, species_list[index])
-            gc.collect()
         else:
             x_help = list(zip(class_fragments, species_list[index]))
             # x.extend(sample(class_fragments, nr_seqs))
             x_help = sample(x_help, nr_seqs)
             x_help, y_species_help = zip(*x_help)
             x.extend(x_help)
-            y_species.extend(y_species_help)
-            y.extend([class_] * nr_seqs)
+            y_species = np.append(y_species,y_species_help)
+            y = np.append([class_] * nr_seqs)
 
     assert len(x) == len(y)
     if (shuffle_):
@@ -264,10 +263,9 @@ def get_fine_model(pretrained_model_file):
     return model_fine, max_length
 
 
-def get_fine_model_multi_tax(pretrained_model_file, num_classes):
+def get_fine_model_multi_tax(pretrained_model_file, num_classes, tax_ranks):
     # with mirrored_strategy.scope():
-    model_fine = generate_bert_with_pretrained_multi_tax(
-        pretrained_model_file, num_classes)
+    model_fine = generate_bert_with_pretrained_multi_tax(pretrained_model_file, num_classes, tax_ranks)
     model_fine.compile(keras.optimizers.Adam(learning_rate),
                        loss='categorical_crossentropy',
                        metrics=['accuracy'])
@@ -306,7 +304,6 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     tax_ranks = ["superkingdom", "phylum"]
-    print("main")
 
     learning_rate = args.learning_rate
     if (args.seq_len_like is not None):
@@ -358,7 +355,7 @@ if __name__ == '__main__':
     # building model
     if args.multi_tax:
         num_classes = (len(classes[tax].keys()) for tax in classes)
-        model, max_length = get_fine_model_multi_tax(args.pretrained_bert, num_classes=num_classes)
+        model, max_length = get_fine_model_multi_tax(args.pretrained_bert, num_classes=num_classes, tax_ranks=tax_ranks)
     else:
         model, max_length = get_fine_model(args.pretrained_bert)
 
