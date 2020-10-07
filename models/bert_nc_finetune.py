@@ -163,13 +163,9 @@ class FragmentGenerator_multi_tax(Sequence):
         # calc vector per tax and append
         # if class not in dict use vector of unknown class
         for index, class_tax_i in enumerate(ranks):
-            # try:
             vector.append(self.class_vectors[self.tax_ranks[index]].get(ranks[class_tax_i][1],
-                                                                    self.class_vectors[self.tax_ranks[index]][
-                                                                        'unknown']))
-            # except:
-            #     print(self.tax_ranks[index])
-            #     print(ranks[class_tax_i][1])
+                                                                        self.class_vectors[self.tax_ranks[index]][
+                                                                            'unknown']))
 
         # calc sample weight
         for index, class_tax_i in enumerate(ranks):
