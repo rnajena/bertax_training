@@ -3,6 +3,7 @@ from Bio import SeqIO
 from random import choice
 from logging import info
 from time import time
+import threading
 
 
 class GenomeDB:
@@ -42,7 +43,7 @@ class GenomeDB:
             info(f'size {total_size/1024**3:.2f}GB above threshold '
                  f'({size_thr/1024**3:.2f}GB), creating index')
             start = time()
-            self.seq_dict = SeqIO.index_db(basename(fastas[0]) + '.idx',
+            self.seq_dict = SeqIO.index_db(basename(fastas[0]) + f'_{threading.get_ident()}.idx',
                                            fastas,
                                            format='fasta',
                                            key_function=key_function)

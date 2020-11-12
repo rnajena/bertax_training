@@ -12,7 +12,7 @@ import logging
 from tqdm import tqdm
 from pprint import pprint
 import os.path
-from threading import Thread
+import threading
 import argparse
 
 ALPHABET_all = ALPHABET.lower() + ALPHABET.upper()
@@ -189,13 +189,16 @@ def get_sk_fragments(nr_fragments, orders_dict, genome_db,
     return fragments, profiles, speciess
 
 
-def get_sk_fragments_nocomp(nr_fragments, orders_dict, genome_db, order_max_its=None,
-                            nonalph_cutoff=None, **get_fragment_kwargs):
+def get_sk_fragments_nocomp(nr_fragments, orders_dict, genome_args, order_max_its=None,
+                            nonalph_cutoff=None, nr_threads=1, **get_fragment_kwargs):
+    get_sk_fragments_nocomp.nr_picked = 0
+    get_sk_fragments_nocomp.nr_fragments = nr_fragments
     def finished():
-        return (len(fragments) >= nr_fragments)
+        return (get_sk_fragments_nocomp.nr_picked >= get_sk_fragments_nocomp.nr_fragments)
     fragments = []
     speciess = []
     iterations = 0
+    genome_db = load_genomes(**genome_args)
     logging.info('precaching taxids with available genomes for each order... ')
     avail_taxids = {}
     for order in tqdm(orders_dict):
@@ -205,27 +208,56 @@ def get_sk_fragments_nocomp(nr_fragments, orders_dict, genome_db, order_max_its=
             avail_taxids[order] = taxids
     orders_keys = list(avail_taxids)
     logging.info('done.')
-    pbar = tqdm(total=nr_fragments,
-                desc=genome_db.name)
+    get_sk_fragments_nocomp.pbar = tqdm(total=nr_fragments,
+                                        desc=genome_db.name)
     while not finished():
-        for order in sample(orders_keys, len(orders_keys)):
-            if (finished()):
-                break
-            iterations += 1
-            taxids = avail_taxids[order]
-            picked = pick_fragment_nocomp(taxids, genome_db,
-                                   order_max_its, nonalph_cutoff,
-                                   **get_fragment_kwargs)
-            if (picked is None):
-                continue
-            fragment,  species = picked
-            fragments.append(fragment)
-            speciess.append(species)
-            pbar.update()
-    pbar.close()
+        orders_sampled = list(sample(orders_keys, len(orders_keys)))
+        chunk_size = np.ceil(len(orders_sampled) / nr_threads).astype(int)
+        orders_sampled_chunks = [orders_sampled[i:i + chunk_size]
+                                 for i in range(0, len(orders_sampled), chunk_size)]
+        assert len(orders_sampled_chunks) == nr_threads
+        threads = []
+        lock = threading.Lock()
+        for i in range(nr_threads):
+            t_fragments = []
+            t_speciess = []
+            t = threading.Thread(target=order_fragments_nocomp,
+                                 args=(lock, orders_sampled_chunks[i],
+                                       {o: avail_taxids[o] for o in orders_sampled_chunks[i]},
+                                       genome_args, order_max_its, nonalph_cutoff,
+                                       t_fragments, t_speciess),
+                                 kwargs=get_fragment_kwargs)
+            threads.append((t, t_fragments, t_speciess))
+            t.start()
+        for t, f, s in threads:
+            t.join()
+            fragments.extend(f)
+            speciess.extend(s)
+    get_sk_fragments_nocomp.pbar.close()
     print(f'{iterations} iterations on superkingdom level')
     return fragments, speciess
 
+def order_fragments_nocomp(lock, orders_chunk, avail_taxids, genome_args,
+                           order_max_its, nonalph_cutoff, fragments, speciess,
+                           **get_fragment_kwargs):
+    genome_db = load_genomes(**genome_args)
+    iterations = 0
+    for order in orders_chunk:
+        if (get_sk_fragments_nocomp.nr_picked >= get_sk_fragments_nocomp.nr_fragments):
+            return fragments, speciess
+        iterations += 1
+        taxids = avail_taxids[order]
+        picked = pick_fragment_nocomp(taxids, genome_db,
+                               order_max_its, nonalph_cutoff,
+                               **get_fragment_kwargs)
+        if (picked is None):
+            continue
+        fragment,  species = picked
+        fragments.append(fragment)
+        speciess.append(species)
+        with lock:
+            get_sk_fragments_nocomp.nr_picked += 1
+            get_sk_fragments_nocomp.pbar.update()
 
 def load_genomes(genome_dir, sk, thr=16e9):
     def from_fastadir(sk_dir):
@@ -259,6 +291,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('sk')
     parser.add_argument('nr_fragments', type=int)
+    parser.add_argument('--nr_threads', type=int, default=1)
     parser.add_argument('--outdir', '-o', default='.')
     parser.add_argument('--thr', '-t', type=float, default=16e9)
     parser.add_argument('--nonalph_cutoff', type=float, default=None)
@@ -285,8 +318,10 @@ if __name__ == '__main__':
             global counter
             counter = 0
             fragments, profiles, speciess = get_sk_fragments_nocomp(
-                nr_fragments=nr_seqs, orders_dict=sk_order_dict[sk], genome_db=genome_db,
-                nonalph_cutoff=args.nonalph_cutoff)
+                nr_fragments=nr_seqs, orders_dict=sk_order_dict[sk],
+                genome_args={'genome_dir': '/home/lo63tor/master/sequences/dna_sequences/genomes',
+                             'sk': sk, 'thr': args.thr},
+                nonalph_cutoff=args.nonalph_cutoff, nr_threads=args.nr_threads)
         else:
             fragments, profiles, speciess = get_sk_fragments(
                 nr_seqs, sk_order_dict[sk], genome_db, minhash_defined,
