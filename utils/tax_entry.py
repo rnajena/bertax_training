@@ -1,6 +1,8 @@
 import os
 from collections import defaultdict
-
+import sqlite3
+import warnings
+warnings.filterwarnings("ignore", category=UserWarning)
 
 def get_dicts(data_dir="/mnt/fass2/projects/fm_read_classification_comparison/taxonomy"):
     """get ncbi data and parse to dicts
@@ -99,6 +101,7 @@ class TaxidLineage:
     def __init__(self):
         from ete3 import NCBITaxa
         self.ncbi = NCBITaxa()
+        self.ncbi.db = sqlite3.connect(self.ncbi.dbfile, check_same_thread=False)
 
     def _get_d_rank(self, d, rank):
         if (rank not in d.values()):

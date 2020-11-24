@@ -19,11 +19,12 @@ from tensorflow.keras.mixed_precision import experimental as mixed_precision
 from tensorflow.keras.callbacks import ModelCheckpoint, TensorBoard, EarlyStopping
 from os.path import splitext
 import pandas as pd
+from sklearn.metrics import balanced_accuracy_score
 
-policy = mixed_precision.Policy('mixed_float16')
-mixed_precision.set_policy(policy)
-print('Compute dtype: %s' % policy.compute_dtype)
-print('Variable dtype: %s' % policy.variable_dtype)
+# policy = mixed_precision.Policy('mixed_float16')
+# mixed_precision.set_policy(policy)
+# print('Compute dtype: %s' % policy.compute_dtype)
+# print('Variable dtype: %s' % policy.variable_dtype)
 
 print("Num GPUs Available: ", len(tf.config.experimental.list_physical_devices('GPU')))
 mirrored_strategy = tf.distribute.MirroredStrategy()
@@ -67,7 +68,7 @@ def load_fragments(fragments_dir, shuffle_=True, balance=True, nr_seqs=None):
             x_help, y_species_help = zip(*x_help)
             x.extend(x_help)
             y_species = np.append(y_species,y_species_help)
-            y = np.append([class_] * nr_seqs)
+            y = np.append(y, [class_] * nr_seqs)
 
     assert len(x) == len(y)
     if (shuffle_):
@@ -147,9 +148,13 @@ class FragmentGenerator_multi_tax(Sequence):
         # calc vector per tax and append
         # if class not in dict use vector of unknown class
         for index, class_tax_i in enumerate(ranks):
+            # try:
             vector.append(self.class_vectors[self.tax_ranks[index]].get(ranks[class_tax_i][1],
-                                                                        self.class_vectors[self.tax_ranks[index]][
-                                                                            'unknown']))
+                                                                    self.class_vectors[self.tax_ranks[index]][
+                                                                        'unknown']))
+            # except:
+            #     print(self.tax_ranks[index])
+            #     print(ranks[class_tax_i][1])
 
         # calc sample weight
         for index, class_tax_i in enumerate(ranks):
@@ -238,9 +243,11 @@ def get_classes_and_weights_multi_tax(species_list, tax_ranks=['superkingdom', '
                 weight_classes_tax_i.update({key: weight})
 
         unknown += classes_tax_i.get("unknown", 0)
+        # if unknown != 0:
         classes_tax_i.update({'unknown': unknown})
         classes.update({tax_ranks[index]: classes_tax_i})
 
+        # if unknown != 0:
         weight = num_entries / unknown if unknown != 0 else 1
         weight_classes_tax_i.update({'unknown': weight})
         weight_classes.update({tax_ranks[index]: weight_classes_tax_i})
@@ -270,8 +277,8 @@ def get_fine_model_multi_tax(pretrained_model_file, num_classes, tax_ranks):
                        loss='categorical_crossentropy',
                        metrics=['accuracy'])
     max_length = model_fine.input_shape[0][1]
-    tf.keras.utils.plot_model(model_fine, to_file="model.png", show_shapes=True)
-    model_fine.summary()
+    # tf.keras.utils.plot_model(model_fine, to_file="model.png", show_shapes=True)
+    # model_fine.summary()
 
     return model_fine, max_length
 
@@ -304,6 +311,7 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     tax_ranks = ["superkingdom", "phylum"]
+    test = False
 
     learning_rate = args.learning_rate
     if (args.seq_len_like is not None):
@@ -316,7 +324,7 @@ if __name__ == '__main__':
     else:
         seq_len_like = None
 
-    # model, max_length = get_fine_model_multi_tax(args.pretrained_bert, num_classes=(2,17,22))
+    # model, max_length = get_fine_model_multi_tax(args.pretrained_bert, num_classes=(2,17,22),tax_ranks=tax_ranks)
     # exit()
     if not args.test_benchmark:
         # loading training data
@@ -342,90 +350,145 @@ if __name__ == '__main__':
                 f_train_x, f_train_y, test_size=0.05, stratify=f_train_y)
 
     else:
-        f_test_x, f_test_y, f_test_y_species = load_dataset("/home/go96bix/projects/dna_class/resources/test.tsv")
-        f_train_x, f_train_y, f_train_y_species = load_dataset("/home/go96bix/projects/dna_class/resources/train.tsv")
+        if test:
+            f_test_x, f_test_y, f_test_y_species = load_dataset("/home/go96bix/projects/dna_class/resources/test.tsv")
+            f_train_x, f_train_y, f_train_y_species = load_dataset("/home/go96bix/projects/dna_class/resources/train.tsv")
+            # f_test_x, f_test_y, f_test_y_species = load_dataset(
+            #     "/home/go96bix/projects/dna_class/resources/filtered/test.tsv")
+            # f_train_x, f_train_y, f_train_y_species = load_dataset(
+            #     "/home/go96bix/projects/dna_class/resources/filtered/train.tsv")
+        else:
+            f_test_x, f_test_y, f_test_y_species = load_dataset("/home/go96bix/projects/dna_class/resources/filtered/test.tsv")
+            f_train_x, f_train_y, f_train_y_species = load_dataset("/home/go96bix/projects/dna_class/resources/filtered/train.tsv")
         f_train_x = list(zip(f_train_x, f_train_y_species))
         f_train_x, f_val_x, f_train_y, f_val_y = train_test_split(f_train_x, f_train_y, test_size=0.05,
                                                                   stratify=f_train_y)
         f_train_x, f_train_y_species = zip(*f_train_x)
         f_val_x, f_val_y_species = zip(*f_val_x)
         classes, weight_classes, species_list_y = get_classes_and_weights_multi_tax(f_train_y_species,
-                                                                                    tax_ranks=tax_ranks)
-
-    # building model
-    if args.multi_tax:
-        num_classes = (len(classes[tax].keys()) for tax in classes)
-        model, max_length = get_fine_model_multi_tax(args.pretrained_bert, num_classes=num_classes, tax_ranks=tax_ranks)
+                                                                                    tax_ranks=tax_ranks, unknown_thr=0)
+    if test:
+        from models.bert_utils import load_bert
+        # model = load_bert("/home/go96bix/projects/dna_class/resources/bert_nc_C2_filtered_model.best.loss.hdf5", compile_=True)
+        model = load_bert("/home/go96bix/projects/dna_class/resources/bert_nc_C2_all_model.best.loss.hdf5", compile_=True)
+        max_length = model.input_shape[0][1]
     else:
-        model, max_length = get_fine_model(args.pretrained_bert)
+        # building model
+        if args.multi_tax:
+            num_classes = [len(classes[tax].keys()) for tax in classes]
+            model, max_length = get_fine_model_multi_tax(args.pretrained_bert, num_classes=num_classes, tax_ranks=tax_ranks)
+        else:
+            model, max_length = get_fine_model(args.pretrained_bert)
 
-    if (args.seq_len > max_length):
-        warning(f'desired seq len ({args.seq_len}) is higher than possible ({max_length})'
-                f'setting seq len to {max_length}')
-        args.seq_len = max_length
+        if (args.seq_len > max_length):
+            warning(f'desired seq len ({args.seq_len}) is higher than possible ({max_length})'
+                    f'setting seq len to {max_length}')
+            args.seq_len = max_length
     generator_args = {
         'max_seq_len': max_length, 'k': args.k, 'stride': args.stride,
         'batch_size': args.batch_size, 'window': True,
         'seq_len_like': seq_len_like}
     model.summary()
 
-    filepath1 = splitext(args.pretrained_bert)[0] + "model.best.acc.hdf5"
-    filepath2 = splitext(args.pretrained_bert)[0] + "model.best.loss.hdf5"
-    checkpoint1 = ModelCheckpoint(filepath1, monitor='val_accuracy', verbose=1, save_best_only=True,
-                                  save_weights_only=False, mode='max')
-    checkpoint2 = ModelCheckpoint(filepath2, monitor='val_loss', verbose=1, save_best_only=True,
-                                  save_weights_only=False, mode='min')
-    checkpoint3 = EarlyStopping('val_accuracy', min_delta=0, patience=2, restore_best_weights=True)
-    tensorboard_callback = TensorBoard(log_dir="./logs/run_repeated_undersampling", histogram_freq=1, write_graph=True,
-                                       write_images=True, update_freq=100, embeddings_freq=1)
+    if not test:
+        name="_filtered"
+        # name="_all"
+        filepath1 = splitext(args.pretrained_bert)[0] +name+ "_model.best.acc.hdf5"
+        filepath2 = splitext(args.pretrained_bert)[0] +name+ "_model.best.loss.hdf5"
+        checkpoint1 = ModelCheckpoint(filepath1, monitor='val_accuracy', verbose=1, save_best_only=True,
+                                      save_weights_only=False, mode='max')
+        checkpoint2 = ModelCheckpoint(filepath2, monitor='val_loss', verbose=1, save_best_only=True,
+                                      save_weights_only=False, mode='min')
+        checkpoint3 = EarlyStopping('val_loss', min_delta=0, patience=2, restore_best_weights=True)
+        tensorboard_callback = TensorBoard(log_dir="./logs/run_broad_learning"+name, histogram_freq=1, write_graph=True,
+                                           write_images=True, update_freq=100, embeddings_freq=1)
 
-    # callbacks_list = [checkpoint1, checkpoint2, checkpoint3]
-    callbacks_list = [checkpoint1, checkpoint2, checkpoint3, tensorboard_callback]
+        # callbacks_list = [checkpoint1, checkpoint2, checkpoint3]
+        callbacks_list = [checkpoint1, checkpoint2, checkpoint3, tensorboard_callback]
 
-    if (args.store_train_data):
-        from datetime import datetime
+        if (args.store_train_data):
+            from datetime import datetime
 
-        time_str = datetime.now().strftime('%Y%m%d_%H-%M-%S')
-        for kind, x, y in [('train', f_train_x, f_train_y), ('val', f_val_x, f_val_y),
-                           ('test', f_test_x, f_test_y)]:
-            with open(f'{time_str}_{kind}_data.json', 'w') as f:
-                json.dump([x, y], f)
-        print('saved train/test/val data.')
-    if args.multi_tax:
-        model.fit(
-            FragmentGenerator_multi_tax(f_train_x, f_train_y, f_train_y_species, weight_classes, seq_len=args.seq_len,
-                                        tax_ranks=tax_ranks, classes=classes, **generator_args),
-            callbacks=callbacks_list, epochs=args.epochs,
-            validation_data=FragmentGenerator_multi_tax(f_val_x, f_val_y, f_val_y_species, weight_classes,
-                                                        seq_len=args.seq_len, tax_ranks=tax_ranks, classes=classes,
-                                                        **generator_args), use_multiprocessing=False, workers=0)
-    else:
-        model.fit(FragmentGenerator(f_train_x, f_train_y, args.seq_len, **generator_args), callbacks=callbacks_list,
-                  epochs=args.epochs,
-                  validation_data=FragmentGenerator(f_val_x, f_val_y, args.seq_len, **generator_args))
-    if (args.save_name is not None):
-        save_path = args.save_name + '.h5'
-    else:
-        save_path = os.path.splitext(args.pretrained_bert)[0] + '_finetuned.h5'
-    model.save(save_path)
-    print('testing...')
+            time_str = datetime.now().strftime('%Y%m%d_%H-%M-%S')
+            for kind, x, y in [('train', f_train_x, f_train_y), ('val', f_val_x, f_val_y),
+                               ('test', f_test_x, f_test_y)]:
+                with open(f'{time_str}_{kind}_data.json', 'w') as f:
+                    json.dump([x, y], f)
+            print('saved train/test/val data.')
+
     if args.multi_tax:
         test_g = FragmentGenerator_multi_tax(f_test_x, f_test_y, f_test_y_species, weight_classes, seq_len=args.seq_len,
-                                             classes=classes, **generator_args)
+                                             tax_ranks=tax_ranks, classes=classes, **generator_args)
     else:
         test_g = FragmentGenerator(f_test_x, f_test_y, args.seq_len, **generator_args)
+
+    if not test:
+        try:
+            if args.multi_tax:
+                model.fit(
+                    FragmentGenerator_multi_tax(f_train_x, f_train_y, f_train_y_species, weight_classes, seq_len=args.seq_len,
+                                                tax_ranks=tax_ranks, classes=classes, **generator_args),
+                    callbacks=callbacks_list, epochs=args.epochs,
+                    validation_data=FragmentGenerator_multi_tax(f_val_x, f_val_y, f_val_y_species, weight_classes,
+                                                                seq_len=args.seq_len, tax_ranks=tax_ranks, classes=classes,
+                                                                **generator_args))
+            else:
+                model.fit(FragmentGenerator(f_train_x, f_train_y, args.seq_len, **generator_args),
+                          callbacks=callbacks_list, epochs=args.epochs,
+                          validation_data=FragmentGenerator(f_val_x, f_val_y, args.seq_len, **generator_args))
+        except (KeyboardInterrupt):
+            print("training interrupted, current status will be saved and tested, press ctrl+c to cancel this")
+            file_suffix = '_aborted.hdf5'
+            model.save(splitext(args.pretrained_bert)[0] + '_aborted.h5')
+            print('testing...')
+            result = model.evaluate(test_g)
+            print("test results:",*zip(model.metrics_names, result))
+            exit()
+        if (args.save_name is not None):
+            save_path = args.save_name + '.h5'
+        else:
+            save_path = os.path.splitext(args.pretrained_bert)[0] + '_finetuned.h5'
+        model.save(save_path)
+        print('testing...')
+
     if (args.store_predictions or args.roc_auc):
+        val_g = FragmentGenerator_multi_tax(f_val_x, f_val_y, f_val_y_species, weight_classes, seq_len=args.seq_len,
+                                             tax_ranks=tax_ranks, classes=classes, **generator_args)
         predicted = predict(
             model, test_g,
-            args.roc_auc, classes, return_data=args.store_predictions)
+            args.roc_auc, classes, return_data=args.store_predictions, calc_metrics=False)
+        y_true, y_pred = predicted["data"]
+        # !!! only needed for small fragment set !!!
+        # predicted_val = predict(
+        #     model, val_g,
+        #     args.roc_auc, classes, return_data=args.store_predictions, calc_metrics=False)
+        # y_true_val, y_pred_val = predicted_val["data"]
+
+        # for i in range(len(y_pred)):
+        #     np_val = pd.crosstab(np.argmax(np.array(y_true_val[i]), axis=1), np.argmax(np.array(y_pred_val[i]), axis=1)).values
+        #     # reorder output according to best val prediction
+        #     y_pred_i_sorted = y_pred[i][:, np.argmax(np_val, axis=1)]
+        #     acc = balanced_accuracy_score(np.argmax(y_true[i],axis=1),np.argmax(y_pred_i_sorted,axis=1))
+        #     print(f"{test_g.tax_ranks[i]} acc:", acc)
+        #     print(pd.crosstab(np.argmax(np.array(y_true[i]),axis=1), np.argmax(np.array(y_pred_i_sorted),axis=1),rownames=['True'], colnames=['Predicted'], margins=True))
+        #     predicted["data"][1][i]=y_pred_i_sorted
+        #     # sorted_names = np.array(sorted(classes))
+        #     # print(pd.crosstab(sorted_names[np.argmax(np.array(y_true[i]),axis=1)], sorted_names[np.argmax(np.array(y_pred[i]),axis=1)],
+        #     #                   rownames=['True'], colnames=['Predicted'], margins=True))
         result = predicted['metrics']
         metrics_names = predicted['metrics_names']
         if (args.store_predictions):
             import pickle
 
-            pickle.dump(predicted, open(os.path.splitext(save_path)[0]
-                                        + '_predictions.pkl', 'wb'))
+            if test:
+                pickle.dump(predicted, open("/home/go96bix/projects/dna_class/resources/"
+                                    + '_predictions.pkl', 'wb'))
+            else:
+                pickle.dump(predicted, open(os.path.splitext(save_path)[0]
+                                            + '_predictions.pkl', 'wb'))
+
     else:
         result = model.evaluate(test_g)
         metrics_names = model.metrics_names
     print("test results:", *zip(metrics_names, result))
+

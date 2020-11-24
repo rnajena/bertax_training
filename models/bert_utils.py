@@ -1,3 +1,5 @@
+import os
+os.environ['TF_KERAS']="1"
 from tensorflow import keras
 import keras_bert
 import tensorflow as tf
@@ -52,32 +54,44 @@ def generate_bert_with_pretrained_multi_tax(pretrained_path, nr_classes=(4, 30, 
     custom_objects = {'GlorotNormal': keras.initializers.glorot_normal,
                       'GlorotUniform': keras.initializers.glorot_uniform}
     custom_objects.update(keras_bert.get_custom_objects())
-    model = keras.models.load_model(pretrained_path, compile=False,
+    model = tf.keras.models.load_model(pretrained_path, compile=False,
                                     custom_objects=custom_objects)
     inputs = model.inputs[:2]
     nsp_dense_layer = model.get_layer(name='NSP-Dense').output
 
+    # out_layer = []
+    # previous_taxa = [nsp_dense_layer]
+    # for index, nr_classes_tax_i in enumerate(nr_classes):
+    #     if index != 0:
+    #         tax_i_in = tf.keras.layers.concatenate(previous_taxa)
+    #     else:
+    #         tax_i_in = nsp_dense_layer
+    #     tax_i_out = tf.keras.layers.Dense(nr_classes_tax_i,name=f"{tax_ranks[index]}_out", activation='softmax')(tax_i_in)
+    #     previous_taxa.append(tax_i_out)
+    #     out_layer.append(tax_i_out)
+
+    tax_i_in = nsp_dense_layer
     out_layer = []
-    previous_taxa = [nsp_dense_layer]
     for index, nr_classes_tax_i in enumerate(nr_classes):
-        if index != 0:
-            tax_i_in = keras.layers.concatenate(previous_taxa)
-        else:
-            tax_i_in = nsp_dense_layer
-        tax_i_out = keras.layers.Dense(nr_classes_tax_i,name=f"{tax_ranks[index]}_out", activation='softmax')(tax_i_in)
-        previous_taxa.append(tax_i_out)
+        tax_i_out = tf.keras.layers.Dense(nr_classes_tax_i, name=f"{tax_ranks[index]}_out", activation='softmax')(
+            tax_i_in)
         out_layer.append(tax_i_out)
+        tax_i_in_help = out_layer.copy()
+        tax_i_in_help.append(nsp_dense_layer)
+        tax_i_in = tf.keras.layers.concatenate(tax_i_in_help)
 
-
-    # superkingdoms, families, species = nr_classes
-    # superkingdoms_out = keras.layers.Dense(superkingdoms, activation='softmax',name="superkingdoms_softmax")(nsp_dense_layer)
-    # families_in = keras.layers.concatenate([nsp_dense_layer,superkingdoms_out])
-    # families_out = keras.layers.Dense(families,activation='softmax',name="families_softmax")(families_in)
-    # species_in = keras.layers.concatenate([nsp_dense_layer,families_out])
-    # species_out = keras.layers.Dense(species,activation='softmax',name="species_softmax")(species_in)
-    # # out_layer = keras.layers.concatenate([superkingdoms_out,families_out,species_out])
-
-    model_fine = keras.Model(inputs=inputs, outputs=out_layer)
+    # out_layer = []
+    # previous_taxa = [nsp_dense_layer]
+    # tax_i_in = nsp_dense_layer
+    # tax_i_out = tf.keras.layers.Dense(nr_classes[0], activation='softmax',name="superkingdoms_softmax")(tax_i_in)
+    # previous_taxa.append(tax_i_out)
+    # out_layer.append(tax_i_out)
+    #
+    # tax_i_in = tf.keras.layers.concatenate(previous_taxa)
+    # tax_i_out = tf.keras.layers.Dense(nr_classes[1],activation='softmax',name="families_softmax")(tax_i_in)
+    # out_layer.append(tax_i_out)
+    # model_fine = tf.keras.Model(inputs=inputs, outputs=tax_i_out)
+    model_fine = tf.keras.Model(inputs=inputs, outputs=out_layer)
     return model_fine
 
 
@@ -121,11 +135,16 @@ def process_bert_tokens_batch(batch_x):
 
 
 def predict(model, test_generator, roc_auc=True, classes=None,
-            return_data=False, store_x=False, nonverbose=False):
+            return_data=False, store_x=False, nonverbose=False, calc_metrics=True):
     predict_g = PredictGenerator(test_generator, store_x=store_x)
     preds = model.predict(predict_g, verbose=0 if nonverbose else 1)
-    y = predict_g.get_targets()[:len(preds)] # in case not everything was predicted
-    if (len(y) > 0):
+
+    if len(predict_g.get_targets()[0].shape)>=2:  # in case a single model has multiple outputs
+        y = [np.array(pred[:len(preds[0])]) for pred in predict_g.get_targets()]  # in case not everything was predicted
+    else:
+        y = predict_g.get_targets()[:len(preds)] # in case not everything was predicted
+
+    if (len(y) > 0 and calc_metrics):
         acc = accuracy(y, preds)
         result = [acc]
         metrics_names = ['test_accuracy']
