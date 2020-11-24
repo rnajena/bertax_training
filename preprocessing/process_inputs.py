@@ -347,7 +347,7 @@ def transform_inputs(inputs, progress=False, transform=seq2kmers,
 
 def get_class_vectors(classes) -> dict:
     return {c: [1 if c_i == i else 0 for i in range(len(classes))]
-            for c_i, c in enumerate(classes)}
+            for c_i, c in enumerate(sorted(classes))}
 
 
 def gen_b64():
