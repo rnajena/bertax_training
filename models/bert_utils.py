@@ -2,7 +2,6 @@ import keras
 import keras_bert
 import tensorflow as tf
 from preprocessing.process_inputs import seq2kmers, ALPHABET
-from preprocessing.generate_data import PredictGenerator
 from random import randint
 import numpy as np
 from itertools import product
@@ -110,6 +109,7 @@ def process_bert_tokens_batch(batch_x):
 
 def predict(model, test_generator, roc_auc=True, classes=None,
             return_data=False, store_x=False, nonverbose=False):
+    from preprocessing.generate_data import PredictGenerator
     predict_g = PredictGenerator(test_generator, store_x=store_x)
     preds = model.predict(predict_g, verbose=0 if nonverbose else 1)
     y = predict_g.get_targets()[:len(preds)] # in case not everything was predicted
@@ -131,3 +131,47 @@ def predict(model, test_generator, roc_auc=True, classes=None,
     return {'metrics': result, 'metrics_names': metrics_names,
             'data': (y, preds) if return_data else None,
             'x': predict_g.get_x() if return_data and store_x else None}
+
+def get_classes_and_weights_multi_tax(species_list, unknown_thr=10_000):
+    from utils.tax_entry import TaxidLineage
+    tlineage = TaxidLineage()
+    
+    classes = dict()
+    weight_classes = dict()
+    super_king_dict = dict()
+    king_dict = dict()
+    family_dict = dict()
+    num_entries = len(species_list)
+
+    for taxid in species_list:
+        ranks = tlineage.get_ranks(taxid, ranks=['superkingdom', 'kingdom', 'family'])
+
+        num_same_superking = super_king_dict.get(ranks['superkingdom'][1], 0) + 1
+        super_king_dict.update({ranks['superkingdom'][1]: num_same_superking})
+        num_same_king = king_dict.get(ranks['kingdom'][1],0) + 1
+        king_dict.update({ranks['kingdom'][1]:num_same_king})
+        num_same_family = family_dict.get(ranks['family'][1],0) + 1
+        family_dict.update({ranks['family'][1]:num_same_family})
+
+
+    for index, dict_ in enumerate([super_king_dict,king_dict,family_dict]):
+        classes_tax_i = dict_.copy()
+        unknown = 0
+        weight_classes_tax_i = dict()
+        for key, value in dict_.items():
+            if value < unknown_thr:
+                unknown += value
+                classes_tax_i.pop(key)
+            else:
+                weight = num_entries/value
+                weight_classes_tax_i.update({key: weight})
+
+        unknown += classes_tax_i.get("unknown", 0)
+        classes_tax_i.update({'unknown': unknown})
+        classes.update({['superkingdom','kingdom','family'][index]: classes_tax_i})
+
+        weight = num_entries/unknown if unknown != 0 else 1
+        weight_classes_tax_i.update({'unknown': weight})
+        weight_classes.update({['superkingdom', 'kingdom', 'family'][index]: weight_classes_tax_i})
+
+    return classes, weight_classes
