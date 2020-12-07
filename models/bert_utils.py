@@ -1,7 +1,10 @@
-import keras
+import os
+os.environ['TF_KERAS']="1"
+from tensorflow import keras
 import keras_bert
 import tensorflow as tf
 from preprocessing.process_inputs import seq2kmers, ALPHABET
+from preprocessing.generate_data import PredictGenerator
 from random import randint
 import numpy as np
 from itertools import product
@@ -44,27 +47,51 @@ def generate_bert_with_pretrained(pretrained_path, nr_classes=4):
     return model_fine
 
 
-def generate_bert_with_pretrained_multi_tax(pretrained_path, nr_classes=(4, 30, 100)):
+def generate_bert_with_pretrained_multi_tax(pretrained_path, nr_classes=(4, 30, 100), tax_ranks=["superkingdom","phylum", "family"]):
     """get model ready for fine-tuning and the maximum input length"""
     # see https://colab.research.google.com/github/CyberZHG/keras-bert
     # /blob/master/demo/tune/keras_bert_classification_tpu.ipynb
     custom_objects = {'GlorotNormal': keras.initializers.glorot_normal,
                       'GlorotUniform': keras.initializers.glorot_uniform}
     custom_objects.update(keras_bert.get_custom_objects())
-    model = keras.models.load_model(pretrained_path, compile=False,
+    model = tf.keras.models.load_model(pretrained_path, compile=False,
                                     custom_objects=custom_objects)
     inputs = model.inputs[:2]
     nsp_dense_layer = model.get_layer(name='NSP-Dense').output
 
-    superkingdoms, families, species = nr_classes
-    superkingdoms_out = keras.layers.Dense(superkingdoms, activation='softmax',name="superkingdoms_softmax")(nsp_dense_layer)
-    families_in = keras.layers.concatenate([nsp_dense_layer,superkingdoms_out])
-    families_out = keras.layers.Dense(families,activation='softmax',name="families_softmax")(families_in)
-    species_in = keras.layers.concatenate([nsp_dense_layer,families_out])
-    species_out = keras.layers.Dense(species,activation='softmax',name="species_softmax")(species_in)
-    out_layer = keras.layers.concatenate([superkingdoms_out,families_out,species_out])
+    # out_layer = []
+    # previous_taxa = [nsp_dense_layer]
+    # for index, nr_classes_tax_i in enumerate(nr_classes):
+    #     if index != 0:
+    #         tax_i_in = tf.keras.layers.concatenate(previous_taxa)
+    #     else:
+    #         tax_i_in = nsp_dense_layer
+    #     tax_i_out = tf.keras.layers.Dense(nr_classes_tax_i,name=f"{tax_ranks[index]}_out", activation='softmax')(tax_i_in)
+    #     previous_taxa.append(tax_i_out)
+    #     out_layer.append(tax_i_out)
 
-    model_fine = keras.Model(inputs=inputs, outputs=out_layer)
+    tax_i_in = nsp_dense_layer
+    out_layer = []
+    for index, nr_classes_tax_i in enumerate(nr_classes):
+        tax_i_out = tf.keras.layers.Dense(nr_classes_tax_i, name=f"{tax_ranks[index]}_out", activation='softmax',)(
+            tax_i_in)
+        out_layer.append(tax_i_out)
+        tax_i_in_help = out_layer.copy()
+        tax_i_in_help.append(nsp_dense_layer)
+        tax_i_in = tf.keras.layers.concatenate(tax_i_in_help)
+
+    # out_layer = []
+    # previous_taxa = [nsp_dense_layer]
+    # tax_i_in = nsp_dense_layer
+    # tax_i_out = tf.keras.layers.Dense(nr_classes[0], activation='softmax',name="superkingdoms_softmax")(tax_i_in)
+    # previous_taxa.append(tax_i_out)
+    # out_layer.append(tax_i_out)
+    #
+    # tax_i_in = tf.keras.layers.concatenate(previous_taxa)
+    # tax_i_out = tf.keras.layers.Dense(nr_classes[1],activation='softmax',name="families_softmax")(tax_i_in)
+    # out_layer.append(tax_i_out)
+    # model_fine = tf.keras.Model(inputs=inputs, outputs=tax_i_out)
+    model_fine = tf.keras.Model(inputs=inputs, outputs=out_layer)
     return model_fine
 
 
@@ -108,12 +135,16 @@ def process_bert_tokens_batch(batch_x):
 
 
 def predict(model, test_generator, roc_auc=True, classes=None,
-            return_data=False, store_x=False, nonverbose=False):
-    from preprocessing.generate_data import PredictGenerator
+            return_data=False, store_x=False, nonverbose=False, calc_metrics=True):
     predict_g = PredictGenerator(test_generator, store_x=store_x)
     preds = model.predict(predict_g, verbose=0 if nonverbose else 1)
-    y = predict_g.get_targets()[:len(preds)] # in case not everything was predicted
-    if (len(y) > 0):
+
+    if len(predict_g.get_targets()[0].shape)>=2:  # in case a single model has multiple outputs
+        y = [np.array(pred[:len(preds[0])]) for pred in predict_g.get_targets()]  # in case not everything was predicted
+    else:
+        y = predict_g.get_targets()[:len(preds)] # in case not everything was predicted
+
+    if (len(y) > 0 and calc_metrics):
         acc = accuracy(y, preds)
         result = [acc]
         metrics_names = ['test_accuracy']
@@ -132,29 +163,31 @@ def predict(model, test_generator, roc_auc=True, classes=None,
             'data': (y, preds) if return_data else None,
             'x': predict_g.get_x() if return_data and store_x else None}
 
-def get_classes_and_weights_multi_tax(species_list, unknown_thr=10_000):
+
+def get_classes_and_weights_multi_tax(species_list, tax_ranks=['superkingdom', 'kingdom', 'family'],
+                                      unknown_thr=10_000):
     from utils.tax_entry import TaxidLineage
     tlineage = TaxidLineage()
     
     classes = dict()
     weight_classes = dict()
-    super_king_dict = dict()
-    king_dict = dict()
-    family_dict = dict()
+    tax_ranks_dict = dict()
     num_entries = len(species_list)
+    species_list_y = []
+    for tax_rank_i in tax_ranks:
+        tax_ranks_dict.update({tax_rank_i: dict()})
 
     for taxid in species_list:
-        ranks = tlineage.get_ranks(taxid, ranks=['superkingdom', 'kingdom', 'family'])
+        ranks = tlineage.get_ranks(taxid, ranks=tax_ranks)
+        taxid_y = []
+        for tax_rank_i in tax_ranks:
+            num_same_tax_rank_i = tax_ranks_dict[tax_rank_i].get(ranks[tax_rank_i][1], 0) + 1
+            tax_ranks_dict[tax_rank_i].update({ranks[tax_rank_i][1]: num_same_tax_rank_i})
+            taxid_y.append(ranks[tax_rank_i][1])
+        species_list_y.append(taxid_y)
 
-        num_same_superking = super_king_dict.get(ranks['superkingdom'][1], 0) + 1
-        super_king_dict.update({ranks['superkingdom'][1]: num_same_superking})
-        num_same_king = king_dict.get(ranks['kingdom'][1],0) + 1
-        king_dict.update({ranks['kingdom'][1]:num_same_king})
-        num_same_family = family_dict.get(ranks['family'][1],0) + 1
-        family_dict.update({ranks['family'][1]:num_same_family})
-
-
-    for index, dict_ in enumerate([super_king_dict,king_dict,family_dict]):
+    for index, key in enumerate(tax_ranks_dict.keys()):
+        dict_ = tax_ranks_dict[key]
         classes_tax_i = dict_.copy()
         unknown = 0
         weight_classes_tax_i = dict()
@@ -167,11 +200,17 @@ def get_classes_and_weights_multi_tax(species_list, unknown_thr=10_000):
                 weight_classes_tax_i.update({key: weight})
 
         unknown += classes_tax_i.get("unknown", 0)
+        # if unknown != 0:
         classes_tax_i.update({'unknown': unknown})
-        classes.update({['superkingdom','kingdom','family'][index]: classes_tax_i})
+        classes.update({tax_ranks[index]: classes_tax_i})
 
+        # if unknown != 0:
         weight = num_entries/unknown if unknown != 0 else 1
         weight_classes_tax_i.update({'unknown': weight})
-        weight_classes.update({['superkingdom', 'kingdom', 'family'][index]: weight_classes_tax_i})
+        weight_classes.update({tax_ranks[index]: weight_classes_tax_i})
 
-    return classes, weight_classes
+    species_list_y = np.array(species_list_y)
+    species_list_y = np.array([i if i in classes[tax_ranks[j]] else 'unknown' for j in range(len(tax_ranks)) for i in
+                               species_list_y[:, j]]).reshape((len(tax_ranks), -1)).swapaxes(0, 1)
+
+    return classes, weight_classes, species_list_y
