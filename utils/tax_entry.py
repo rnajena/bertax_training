@@ -1,6 +1,8 @@
 import os
 from collections import defaultdict
-
+import sqlite3
+import warnings
+warnings.filterwarnings("ignore", category=UserWarning)
 
 def get_dicts(data_dir="/mnt/fass2/projects/fm_read_classification_comparison/taxonomy"):
     """get ncbi data and parse to dicts
@@ -100,6 +102,7 @@ class TaxidLineage:
         from ete3 import NCBITaxa
         self.ncbi = NCBITaxa()
         self.cache = {}
+        self.ncbi.db = sqlite3.connect(self.ncbi.dbfile, check_same_thread=False)
 
     def populate(self, taxids, ranks=['superkingdom', 'kingdom', 'phylum', 'family']):
         for taxid in taxids:
@@ -118,10 +121,10 @@ class TaxidLineage:
             return self.cache[taxid]
         d = self.ncbi.get_rank(self.ncbi.get_lineage(taxid))
         return {r: self._get_d_rank(d, r) for r in ranks}
-
-
-
-
+        
+    
+        
+        
 
 if __name__ == "__main__":
     parent_dict, scientific_names, common_names, phylo_names, genbank_common_name = get_dicts()

@@ -146,13 +146,7 @@ class FragmentGenerator_multi_tax(Sequence):
         from utils.tax_entry import TaxidLineage
         tlineage = TaxidLineage()
         self.tlineage = tlineage
-        self.class_vectors = dict()
-        for tax_rank in self.classes:
-            self.class_vectors.update({tax_rank: get_class_vectors(self.classes[tax_rank])})
 
-        self.token_dict = get_token_dict(ALPHABET, k=3)
-        if (self.max_seq_len is None):
-            self.max_seq_len = self.seq_len
 
     def get_class_vectors_multi_tax(self, taxid):
         vector = []
@@ -211,6 +205,58 @@ class FragmentGenerator_multi_tax(Sequence):
         else:
             return [np.array([_[0] for _ in batch_x]),
                     np.array([_[1] for _ in batch_x])]
+
+
+def get_classes_and_weights_multi_tax(species_list, tax_ranks=['superkingdom', 'kingdom', 'family'],
+                                      unknown_thr=10_000):
+    from utils.tax_entry import TaxidLineage
+    tlineage = TaxidLineage()
+
+    classes = dict()
+    weight_classes = dict()
+    tax_ranks_dict = dict()
+    num_entries = len(species_list)
+    species_list_y = []
+    for tax_rank_i in tax_ranks:
+        tax_ranks_dict.update({tax_rank_i: dict()})
+
+    for taxid in species_list:
+        ranks = tlineage.get_ranks(taxid, ranks=tax_ranks)
+        taxid_y = []
+        for tax_rank_i in tax_ranks:
+            num_same_tax_rank_i = tax_ranks_dict[tax_rank_i].get(ranks[tax_rank_i][1], 0) + 1
+            tax_ranks_dict[tax_rank_i].update({ranks[tax_rank_i][1]: num_same_tax_rank_i})
+            taxid_y.append(ranks[tax_rank_i][1])
+        species_list_y.append(taxid_y)
+
+    for index, key in enumerate(tax_ranks_dict.keys()):
+        dict_ = tax_ranks_dict[key]
+        classes_tax_i = dict_.copy()
+        unknown = 0
+        weight_classes_tax_i = dict()
+        for key, value in dict_.items():
+            if value < unknown_thr:
+                unknown += value
+                classes_tax_i.pop(key)
+            else:
+                weight = num_entries / value
+                weight_classes_tax_i.update({key: weight})
+
+        unknown += classes_tax_i.get("unknown", 0)
+        # if unknown != 0:
+        classes_tax_i.update({'unknown': unknown})
+        classes.update({tax_ranks[index]: classes_tax_i})
+
+        # if unknown != 0:
+        weight = num_entries / unknown if unknown != 0 else 1
+        weight_classes_tax_i.update({'unknown': weight})
+        weight_classes.update({tax_ranks[index]: weight_classes_tax_i})
+
+    species_list_y = np.array(species_list_y)
+    species_list_y = np.array([i if i in classes[tax_ranks[j]] else 'unknown' for j in range(len(tax_ranks)) for i in
+                               species_list_y[:, j]]).reshape((len(tax_ranks), -1)).swapaxes(0, 1)
+
+    return classes, weight_classes, species_list_y
 
 
 def get_fine_model(pretrained_model_file):
@@ -446,4 +492,3 @@ if __name__ == '__main__':
         result = model.evaluate(test_g)
         metrics_names = model.metrics_names
     print("test results:", *zip(metrics_names, result))
-

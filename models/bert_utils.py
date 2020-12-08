@@ -92,6 +92,28 @@ def generate_bert_with_pretrained_multi_tax(pretrained_path, nr_classes=(4, 30, 
     # out_layer.append(tax_i_out)
     # model_fine = tf.keras.Model(inputs=inputs, outputs=tax_i_out)
     model_fine = tf.keras.Model(inputs=inputs, outputs=out_layer)
+    tax_i_in = nsp_dense_layer
+    out_layer = []
+    for index, nr_classes_tax_i in enumerate(nr_classes):
+        tax_i_out = tf.keras.layers.Dense(nr_classes_tax_i, name=f"{tax_ranks[index]}_out", activation='softmax')(
+            tax_i_in)
+        out_layer.append(tax_i_out)
+        tax_i_in_help = out_layer.copy()
+        tax_i_in_help.append(nsp_dense_layer)
+        tax_i_in = tf.keras.layers.concatenate(tax_i_in_help)
+
+    # out_layer = []
+    # previous_taxa = [nsp_dense_layer]
+    # tax_i_in = nsp_dense_layer
+    # tax_i_out = tf.keras.layers.Dense(nr_classes[0], activation='softmax',name="superkingdoms_softmax")(tax_i_in)
+    # previous_taxa.append(tax_i_out)
+    # out_layer.append(tax_i_out)
+    #
+    # tax_i_in = tf.keras.layers.concatenate(previous_taxa)
+    # tax_i_out = tf.keras.layers.Dense(nr_classes[1],activation='softmax',name="families_softmax")(tax_i_in)
+    # out_layer.append(tax_i_out)
+    # model_fine = tf.keras.Model(inputs=inputs, outputs=tax_i_out)
+    model_fine = tf.keras.Model(inputs=inputs, outputs=out_layer)
     return model_fine
 
 
@@ -168,7 +190,7 @@ def get_classes_and_weights_multi_tax(species_list, tax_ranks=['superkingdom', '
                                       unknown_thr=10_000):
     from utils.tax_entry import TaxidLineage
     tlineage = TaxidLineage()
-    
+
     classes = dict()
     weight_classes = dict()
     tax_ranks_dict = dict()
