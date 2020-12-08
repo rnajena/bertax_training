@@ -207,6 +207,11 @@ def get_classes_and_weights_multi_tax(species_list, tax_ranks=['superkingdom', '
         # if unknown != 0:
         weight = num_entries/unknown if unknown != 0 else 1
         weight_classes_tax_i.update({'unknown': weight})
+
+        # normalize weights see https://scikit-learn.org/stable/modules/generated/sklearn.utils.class_weight.compute_class_weight.html
+        num_classes = len(weight_classes_tax_i)
+        weight_classes_tax_i = {key:value/num_classes for key, value in weight_classes_tax_i.items()}
+        # update global dict with all weights for tax rank i
         weight_classes.update({tax_ranks[index]: weight_classes_tax_i})
 
     species_list_y = np.array(species_list_y)

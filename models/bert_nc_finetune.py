@@ -21,12 +21,12 @@ from os.path import splitext
 import pandas as pd
 from sklearn.metrics import balanced_accuracy_score
 
-policy = mixed_precision.Policy('mixed_float16')
-mixed_precision.set_policy(policy)
-# os.environ['TF_ENABLE_AUTO_MIXED_PRECISION'] = '1'
-
-print('Compute dtype: %s' % policy.compute_dtype)
-print('Variable dtype: %s' % policy.variable_dtype)
+# policy = mixed_precision.Policy('mixed_float16')
+# mixed_precision.set_policy(policy)
+# # os.environ['TF_ENABLE_AUTO_MIXED_PRECISION'] = '1'
+#
+# print('Compute dtype: %s' % policy.compute_dtype)
+# print('Variable dtype: %s' % policy.variable_dtype)
 
 print("Num GPUs Available: ", len(tf.config.experimental.list_physical_devices('GPU')))
 mirrored_strategy = tf.distribute.MirroredStrategy()
@@ -264,7 +264,7 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
 
-    tax_ranks = ["superkingdom", "phylum"]
+    tax_ranks = ["superkingdom", "phylum", "genus"]
     test = True
 
     learning_rate = args.learning_rate
@@ -306,8 +306,8 @@ if __name__ == '__main__':
 
     else:
         if test:
-            f_test_x, f_test_y, f_test_y_species = load_dataset("/home/go96bix/projects/dna_class/resources/test.tsv")
-            f_train_x, f_train_y, f_train_y_species = load_dataset("/home/go96bix/projects/dna_class/resources/train.tsv")
+            f_test_x, f_test_y, f_test_y_species = load_dataset("/home/go96bix/projects/dna_class/resources/big_set/test.tsv")
+            f_train_x, f_train_y, f_train_y_species = load_dataset("/home/go96bix/projects/dna_class/resources/big_set/train.tsv")
             # f_test_x, f_test_y, f_test_y_species = load_dataset(
             #     "/home/go96bix/projects/dna_class/resources/filtered/test.tsv")
             # f_train_x, f_train_y, f_train_y_species = load_dataset(
@@ -321,11 +321,11 @@ if __name__ == '__main__':
         f_train_x, f_train_y_species = zip(*f_train_x)
         f_val_x, f_val_y_species = zip(*f_val_x)
         classes, weight_classes, species_list_y = get_classes_and_weights_multi_tax(f_train_y_species,
-                                                                                    tax_ranks=tax_ranks, unknown_thr=0)
+                                                                                    tax_ranks=tax_ranks, unknown_thr=10000)
     if test:
         from models.bert_utils import load_bert
         # model = load_bert("/home/go96bix/projects/dna_class/resources/bert_nc_C2_filtered_model.best.loss.hdf5", compile_=True)
-        model = load_bert("/home/go96bix/projects/dna_class/resources/bert_nc_C2_all_model.best.loss.hdf5", compile_=True)
+        model = load_bert("/home/go96bix/projects/dna_class/resources/bert_nc_C2_big_trainingset_all_model.best.loss.hdf5", compile_=True)
         max_length = model.input_shape[0][1]
     else:
         # building model
@@ -436,7 +436,7 @@ if __name__ == '__main__':
             import pickle
 
             if test:
-                pickle.dump(predicted, open("/home/go96bix/projects/dna_class/resources/"
+                pickle.dump(predicted, open("/home/go96bix/projects/dna_class/resources/" + "big_trainingset_all"
                                     + '_predictions.pkl', 'wb'))
             else:
                 pickle.dump(predicted, open(os.path.splitext(save_path)[0]
