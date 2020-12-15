@@ -1,4 +1,5 @@
-from models.bert_nc_finetune import load_fragments, get_classes_and_weights_multi_tax
+from models.bert_nc_finetune import load_fragments
+from models.bert_utils import get_classes_and_weights_multi_tax
 import argparse
 import pandas as pd
 import itertools
