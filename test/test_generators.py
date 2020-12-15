@@ -1,5 +1,5 @@
 from models.bert_nc_finetune import load_fragments, FragmentGenerator
-from preprocessing.generate_data import PredictGenerator, BatchGenerator, DataSplit
+from preprocessing.generate_data import BatchGenerator, DataSplit, PredictGenerator
 from preprocessing.process_inputs import words2index
 from models.model import PARAMS
 import numpy as np

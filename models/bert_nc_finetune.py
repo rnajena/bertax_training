@@ -21,12 +21,12 @@ from os.path import splitext
 import pandas as pd
 from sklearn.metrics import balanced_accuracy_score
 
-policy = mixed_precision.Policy('mixed_float16')
-mixed_precision.set_policy(policy)
-# os.environ['TF_ENABLE_AUTO_MIXED_PRECISION'] = '1'
-
-print('Compute dtype: %s' % policy.compute_dtype)
-print('Variable dtype: %s' % policy.variable_dtype)
+# policy = mixed_precision.Policy('mixed_float16')
+# mixed_precision.set_policy(policy)
+# # os.environ['TF_ENABLE_AUTO_MIXED_PRECISION'] = '1'
+#
+# print('Compute dtype: %s' % policy.compute_dtype)
+# print('Variable dtype: %s' % policy.variable_dtype)
 
 print("Num GPUs Available: ", len(tf.config.experimental.list_physical_devices('GPU')))
 mirrored_strategy = tf.distribute.MirroredStrategy()
@@ -212,7 +212,6 @@ class FragmentGenerator_multi_tax(Sequence):
             return [np.array([_[0] for _ in batch_x]),
                     np.array([_[1] for _ in batch_x])]
 
-
 def get_fine_model(pretrained_model_file):
     # with mirrored_strategy.scope():
     model_fine = generate_bert_with_pretrained(
@@ -264,8 +263,9 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
 
-    tax_ranks = ["superkingdom", "phylum"]
-    test = True
+    tax_ranks = ["superkingdom", "phylum", "genus"]
+    test = False
+    norm_weights = False
 
     learning_rate = args.learning_rate
     if (args.seq_len_like is not None):
@@ -295,7 +295,7 @@ if __name__ == '__main__':
             f_test_x, f_test_y_species = zip(*f_test_x)
 
             classes, weight_classes, species_list_y = get_classes_and_weights_multi_tax(f_train_y_species,
-                                                                                        tax_ranks=tax_ranks)
+                                                                                        tax_ranks=tax_ranks,norm_weights=norm_weights)
 
         else:
             x, y, y_species = load_fragments(args.fragments_dir, nr_seqs=args.nr_seqs)
@@ -306,26 +306,33 @@ if __name__ == '__main__':
 
     else:
         if test:
-            f_test_x, f_test_y, f_test_y_species = load_dataset("/home/go96bix/projects/dna_class/resources/test.tsv")
-            f_train_x, f_train_y, f_train_y_species = load_dataset("/home/go96bix/projects/dna_class/resources/train.tsv")
-            # f_test_x, f_test_y, f_test_y_species = load_dataset(
-            #     "/home/go96bix/projects/dna_class/resources/filtered/test.tsv")
-            # f_train_x, f_train_y, f_train_y_species = load_dataset(
-            #     "/home/go96bix/projects/dna_class/resources/filtered/train.tsv")
+            f_test_x, f_test_y, f_test_y_species = load_dataset("/home/go96bix/projects/dna_class/resources/big_set/test.tsv")
+            f_train_x, f_train_y, f_train_y_species = load_dataset("/home/go96bix/projects/dna_class/resources/big_set/train.tsv")
+
+            # f_train_x = list(zip(f_train_x, f_train_y_species))
+            # f_train_x, f_val_x, f_train_y, f_val_y = train_test_split(f_train_x, f_train_y, test_size=0.05,
+            #                                                           stratify=f_train_y)
+            # f_train_x, f_train_y_species = zip(*f_train_x)
+            # f_val_x, f_val_y_species = zip(*f_val_x)
+            #
+            # f_train_y_species = pd.unique(f_train_y_species)
+            # classes, weight_classes, species_list_y = get_classes_and_weights_multi_tax(f_train_y_species,
+            #                                                                             tax_ranks=tax_ranks,
+            #                                                                             unknown_thr=0)
         else:
-            f_test_x, f_test_y, f_test_y_species = load_dataset("/home/go96bix/projects/dna_class/resources/filtered/test.tsv")
-            f_train_x, f_train_y, f_train_y_species = load_dataset("/home/go96bix/projects/dna_class/resources/filtered/train.tsv")
+            f_test_x, f_test_y, f_test_y_species = load_dataset("/beegfs/go96bix/genomic_fragments_80_big/test.tsv")
+            f_train_x, f_train_y, f_train_y_species = load_dataset("/beegfs/go96bix/genomic_fragments_80_big/train.tsv")
         f_train_x = list(zip(f_train_x, f_train_y_species))
         f_train_x, f_val_x, f_train_y, f_val_y = train_test_split(f_train_x, f_train_y, test_size=0.05,
                                                                   stratify=f_train_y)
         f_train_x, f_train_y_species = zip(*f_train_x)
         f_val_x, f_val_y_species = zip(*f_val_x)
         classes, weight_classes, species_list_y = get_classes_and_weights_multi_tax(f_train_y_species,
-                                                                                    tax_ranks=tax_ranks, unknown_thr=0)
+                                                                                    tax_ranks=tax_ranks, unknown_thr=10000, norm_weights=norm_weights)
     if test:
         from models.bert_utils import load_bert
         # model = load_bert("/home/go96bix/projects/dna_class/resources/bert_nc_C2_filtered_model.best.loss.hdf5", compile_=True)
-        model = load_bert("/home/go96bix/projects/dna_class/resources/bert_nc_C2_all_model.best.loss.hdf5", compile_=True)
+        model = load_bert("/home/go96bix/projects/dna_class/resources/bert_nc_C2_big_trainingset_all_model.best.acc.hdf5", compile_=True)
         max_length = model.input_shape[0][1]
     else:
         # building model
@@ -346,11 +353,11 @@ if __name__ == '__main__':
     model.summary()
 
     if not test:
-        name="_big_trainingset_all"
+        name="_big_trainingset_all_norm_weights"
         # name="_all"
         filepath1 = splitext(args.pretrained_bert)[0] +name+ "_model.best.acc.hdf5"
         filepath2 = splitext(args.pretrained_bert)[0] +name+ "_model.best.loss.hdf5"
-        checkpoint1 = ModelCheckpoint(filepath1, monitor='val_accuracy', verbose=1, save_best_only=True,
+        checkpoint1 = ModelCheckpoint(filepath1, monitor='val_phylum_out_accuracy', verbose=1, save_best_only=True,
                                       save_weights_only=False, mode='max')
         checkpoint2 = ModelCheckpoint(filepath2, monitor='val_loss', verbose=1, save_best_only=True,
                                       save_weights_only=False, mode='min')
@@ -386,7 +393,7 @@ if __name__ == '__main__':
                     callbacks=callbacks_list, epochs=args.epochs,
                     validation_data=FragmentGenerator_multi_tax(f_val_x, f_val_y, f_val_y_species, weight_classes,
                                                                 seq_len=args.seq_len, tax_ranks=tax_ranks, classes=classes,
-                                                                **generator_args))
+                                                                **generator_args), verbose=2)
             else:
                 model.fit(FragmentGenerator(f_train_x, f_train_y, args.seq_len, **generator_args),
                           callbacks=callbacks_list, epochs=args.epochs,
@@ -407,21 +414,25 @@ if __name__ == '__main__':
         print('testing...')
 
     if (args.store_predictions or args.roc_auc):
-        val_g = FragmentGenerator_multi_tax(f_val_x, f_val_y, f_val_y_species, weight_classes, seq_len=args.seq_len,
-                                             tax_ranks=tax_ranks, classes=classes, **generator_args)
         predicted = predict(
             model, test_g,
             args.roc_auc, classes, return_data=args.store_predictions, calc_metrics=False)
         y_true, y_pred = predicted["data"]
         # !!! only needed for small fragment set !!!
+        # val_g = FragmentGenerator_multi_tax(f_val_x, f_val_y, f_val_y_species, weight_classes, seq_len=args.seq_len,
+        #                                     tax_ranks=tax_ranks, classes=classes, **generator_args)
         # predicted_val = predict(
         #     model, val_g,
         #     args.roc_auc, classes, return_data=args.store_predictions, calc_metrics=False)
         # y_true_val, y_pred_val = predicted_val["data"]
-
+        #
         # for i in range(len(y_pred)):
         #     np_val = pd.crosstab(np.argmax(np.array(y_true_val[i]), axis=1), np.argmax(np.array(y_pred_val[i]), axis=1)).values
         #     # reorder output according to best val prediction
+        #     print(np.argmax(np_val, axis=1), f'all {len(np.argmax(np_val, axis=1))}', f'unique {len(np.unique(np.argmax(np_val, axis=1)))}')
+        #     unq, unq_idx, unq_cnt = np.unique(np.argmax(np_val, axis=1), return_inverse=True, return_counts=True)
+        #     cnt_mask = unq_cnt > 1
+        #     print(f'duplicates {unq[cnt_mask]}')
         #     y_pred_i_sorted = y_pred[i][:, np.argmax(np_val, axis=1)]
         #     acc = balanced_accuracy_score(np.argmax(y_true[i],axis=1),np.argmax(y_pred_i_sorted,axis=1))
         #     print(f"{test_g.tax_ranks[i]} acc:", acc)
@@ -436,7 +447,7 @@ if __name__ == '__main__':
             import pickle
 
             if test:
-                pickle.dump(predicted, open("/home/go96bix/projects/dna_class/resources/"
+                pickle.dump(predicted, open("/home/go96bix/projects/dna_class/resources/" + "big_trainingset_all"
                                     + '_predictions.pkl', 'wb'))
             else:
                 pickle.dump(predicted, open(os.path.splitext(save_path)[0]
@@ -446,4 +457,3 @@ if __name__ == '__main__':
         result = model.evaluate(test_g)
         metrics_names = model.metrics_names
     print("test results:", *zip(metrics_names, result))
-

@@ -1,5 +1,5 @@
 from gensim.models import Word2Vec
-from process_inputs import seq2kmers
+from preprocessing.process_inputs import seq2kmers
 from glob import glob
 from tqdm import tqdm
 

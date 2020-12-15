@@ -7,7 +7,7 @@ from preprocessing.process_inputs import seq2kmers, ALPHABET
 from random import randint
 import numpy as np
 from itertools import product
-from logging import info
+from logging import info, warning
 from misc.metrics import compute_roc, accuracy, loss
 
 
@@ -46,7 +46,8 @@ def generate_bert_with_pretrained(pretrained_path, nr_classes=4):
     return model_fine
 
 
-def generate_bert_with_pretrained_multi_tax(pretrained_path, nr_classes=(4, 30, 100), tax_ranks=["superkingdom","phylum", "family"]):
+def generate_bert_with_pretrained_multi_tax(pretrained_path, nr_classes=(4, 30, 100),
+                                            tax_ranks=["superkingdom", "phylum", "family"]):
     """get model ready for fine-tuning and the maximum input length"""
     # see https://colab.research.google.com/github/CyberZHG/keras-bert
     # /blob/master/demo/tune/keras_bert_classification_tpu.ipynb
@@ -139,10 +140,10 @@ def predict(model, test_generator, roc_auc=True, classes=None,
     predict_g = PredictGenerator(test_generator, store_x=store_x)
     preds = model.predict(predict_g, verbose=0 if nonverbose else 1)
 
-    if len(predict_g.get_targets()[0].shape)>=2:  # in case a single model has multiple outputs
-        y = [np.array(pred[:len(preds[0])]) for pred in predict_g.get_targets()]  # in case not everything was predicted
+    if len(predict_g.get_targets()[0].shape) >= 2:  # in case a single model has multiple outputs
+        y = [np.array(target[:len(preds[0])]) for target in predict_g.get_targets()]  # in case not everything was predicted
     else:
-        y = predict_g.get_targets()[:len(preds)] # in case not everything was predicted
+        y = predict_g.get_targets()[:len(preds)]  # in case not everything was predicted
 
     if (len(y) > 0 and calc_metrics):
         acc = accuracy(y, preds)
@@ -165,23 +166,27 @@ def predict(model, test_generator, roc_auc=True, classes=None,
 
 
 def get_classes_and_weights_multi_tax(species_list, tax_ranks=['superkingdom', 'kingdom', 'family'],
-                                      unknown_thr=10_000):
+                                      unknown_thr=10_000, norm_weights=True):
     from utils.tax_entry import TaxidLineage
     tlineage = TaxidLineage()
+    num_entries = len(species_list)
+
+    # reduce number of tax_ids to query
+    unq, unq_idx, unq_cnt = np.unique(species_list, return_inverse=True, return_counts=True)
+    species_list = zip(unq,unq_cnt)
 
     classes = dict()
     weight_classes = dict()
     tax_ranks_dict = dict()
-    num_entries = len(species_list)
     species_list_y = []
     for tax_rank_i in tax_ranks:
         tax_ranks_dict.update({tax_rank_i: dict()})
 
-    for taxid in species_list:
+    for taxid, count in species_list:
         ranks = tlineage.get_ranks(taxid, ranks=tax_ranks)
         taxid_y = []
         for tax_rank_i in tax_ranks:
-            num_same_tax_rank_i = tax_ranks_dict[tax_rank_i].get(ranks[tax_rank_i][1], 0) + 1
+            num_same_tax_rank_i = tax_ranks_dict[tax_rank_i].get(ranks[tax_rank_i][1], 0) + count
             tax_ranks_dict[tax_rank_i].update({ranks[tax_rank_i][1]: num_same_tax_rank_i})
             taxid_y.append(ranks[tax_rank_i][1])
         species_list_y.append(taxid_y)
@@ -196,7 +201,7 @@ def get_classes_and_weights_multi_tax(species_list, tax_ranks=['superkingdom', '
                 unknown += value
                 classes_tax_i.pop(key)
             else:
-                weight = num_entries/value
+                weight = num_entries / value
                 weight_classes_tax_i.update({key: weight})
 
         unknown += classes_tax_i.get("unknown", 0)
@@ -205,12 +210,20 @@ def get_classes_and_weights_multi_tax(species_list, tax_ranks=['superkingdom', '
         classes.update({tax_ranks[index]: classes_tax_i})
 
         # if unknown != 0:
-        weight = num_entries/unknown if unknown != 0 else 1
+        weight = num_entries / unknown if unknown != 0 else 1
         weight_classes_tax_i.update({'unknown': weight})
+
+        # normalize weights see https://scikit-learn.org/stable/modules/generated/sklearn.utils.class_weight.compute_class_weight.html
+        if norm_weights:
+            num_classes = len(weight_classes_tax_i)
+            weight_classes_tax_i = {key: value / num_classes for key, value in weight_classes_tax_i.items()}
+        # update global dict with all weights for tax rank i
         weight_classes.update({tax_ranks[index]: weight_classes_tax_i})
 
     species_list_y = np.array(species_list_y)
     species_list_y = np.array([i if i in classes[tax_ranks[j]] else 'unknown' for j in range(len(tax_ranks)) for i in
                                species_list_y[:, j]]).reshape((len(tax_ranks), -1)).swapaxes(0, 1)
+    # after reduction of querys species_list is in different order the unq_idx mask reverses this
+    species_list_y = species_list_y[unq_idx]
 
     return classes, weight_classes, species_list_y
