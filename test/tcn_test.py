@@ -1,5 +1,5 @@
-from generate_data import DataSplit
-from process_inputs import words2index, words2onehot
+from preprocessing.generate_data import DataSplit
+from preprocessing.process_inputs import words2index, words2onehot
 from keras.layers import Dense, Embedding
 from keras.models import Input, Model
 from keras import callbacks as keras_cbs
