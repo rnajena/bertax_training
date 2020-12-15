@@ -1,14 +1,16 @@
 import os
-os.environ['TF_KERAS']="1"
+
+from tensorflow.python.keras.utils.data_utils import Sequence
+
+os.environ['TF_KERAS'] = "1"
 from tensorflow import keras
 import keras_bert
 import tensorflow as tf
 from preprocessing.process_inputs import seq2kmers, ALPHABET
-from preprocessing.generate_data import PredictGenerator
 from random import randint
 import numpy as np
 from itertools import product
-from logging import info
+from logging import info, warning
 from misc.metrics import compute_roc, accuracy, loss
 
 
@@ -47,7 +49,8 @@ def generate_bert_with_pretrained(pretrained_path, nr_classes=4):
     return model_fine
 
 
-def generate_bert_with_pretrained_multi_tax(pretrained_path, nr_classes=(4, 30, 100), tax_ranks=["superkingdom","phylum", "family"]):
+def generate_bert_with_pretrained_multi_tax(pretrained_path, nr_classes=(4, 30, 100),
+                                            tax_ranks=["superkingdom", "phylum", "family"]):
     """get model ready for fine-tuning and the maximum input length"""
     # see https://colab.research.google.com/github/CyberZHG/keras-bert
     # /blob/master/demo/tune/keras_bert_classification_tpu.ipynb
@@ -55,7 +58,7 @@ def generate_bert_with_pretrained_multi_tax(pretrained_path, nr_classes=(4, 30, 
                       'GlorotUniform': keras.initializers.glorot_uniform}
     custom_objects.update(keras_bert.get_custom_objects())
     model = tf.keras.models.load_model(pretrained_path, compile=False,
-                                    custom_objects=custom_objects)
+                                       custom_objects=custom_objects)
     inputs = model.inputs[:2]
     nsp_dense_layer = model.get_layer(name='NSP-Dense').output
 
@@ -73,29 +76,7 @@ def generate_bert_with_pretrained_multi_tax(pretrained_path, nr_classes=(4, 30, 
     tax_i_in = nsp_dense_layer
     out_layer = []
     for index, nr_classes_tax_i in enumerate(nr_classes):
-        tax_i_out = tf.keras.layers.Dense(nr_classes_tax_i, name=f"{tax_ranks[index]}_out", activation='softmax',)(
-            tax_i_in)
-        out_layer.append(tax_i_out)
-        tax_i_in_help = out_layer.copy()
-        tax_i_in_help.append(nsp_dense_layer)
-        tax_i_in = tf.keras.layers.concatenate(tax_i_in_help)
-
-    # out_layer = []
-    # previous_taxa = [nsp_dense_layer]
-    # tax_i_in = nsp_dense_layer
-    # tax_i_out = tf.keras.layers.Dense(nr_classes[0], activation='softmax',name="superkingdoms_softmax")(tax_i_in)
-    # previous_taxa.append(tax_i_out)
-    # out_layer.append(tax_i_out)
-    #
-    # tax_i_in = tf.keras.layers.concatenate(previous_taxa)
-    # tax_i_out = tf.keras.layers.Dense(nr_classes[1],activation='softmax',name="families_softmax")(tax_i_in)
-    # out_layer.append(tax_i_out)
-    # model_fine = tf.keras.Model(inputs=inputs, outputs=tax_i_out)
-    model_fine = tf.keras.Model(inputs=inputs, outputs=out_layer)
-    tax_i_in = nsp_dense_layer
-    out_layer = []
-    for index, nr_classes_tax_i in enumerate(nr_classes):
-        tax_i_out = tf.keras.layers.Dense(nr_classes_tax_i, name=f"{tax_ranks[index]}_out", activation='softmax')(
+        tax_i_out = tf.keras.layers.Dense(nr_classes_tax_i, name=f"{tax_ranks[index]}_out", activation='softmax', )(
             tax_i_in)
         out_layer.append(tax_i_out)
         tax_i_in_help = out_layer.copy()
@@ -161,10 +142,10 @@ def predict(model, test_generator, roc_auc=True, classes=None,
     predict_g = PredictGenerator(test_generator, store_x=store_x)
     preds = model.predict(predict_g, verbose=0 if nonverbose else 1)
 
-    if len(predict_g.get_targets()[0].shape)>=2:  # in case a single model has multiple outputs
-        y = [np.array(pred[:len(preds[0])]) for pred in predict_g.get_targets()]  # in case not everything was predicted
+    if len(predict_g.get_targets()[0].shape) >= 2:  # in case a single model has multiple outputs
+        y = [np.array(target[:len(preds[0])]) for target in predict_g.get_targets()]  # in case not everything was predicted
     else:
-        y = predict_g.get_targets()[:len(preds)] # in case not everything was predicted
+        y = predict_g.get_targets()[:len(preds)]  # in case not everything was predicted
 
     if (len(y) > 0 and calc_metrics):
         acc = accuracy(y, preds)
@@ -187,23 +168,27 @@ def predict(model, test_generator, roc_auc=True, classes=None,
 
 
 def get_classes_and_weights_multi_tax(species_list, tax_ranks=['superkingdom', 'kingdom', 'family'],
-                                      unknown_thr=10_000):
+                                      unknown_thr=10_000, norm_weights=True):
     from utils.tax_entry import TaxidLineage
     tlineage = TaxidLineage()
+    num_entries = len(species_list)
+
+    # reduce number of tax_ids to query
+    unq, unq_idx, unq_cnt = np.unique(species_list, return_inverse=True, return_counts=True)
+    species_list = zip(unq,unq_cnt)
 
     classes = dict()
     weight_classes = dict()
     tax_ranks_dict = dict()
-    num_entries = len(species_list)
     species_list_y = []
     for tax_rank_i in tax_ranks:
         tax_ranks_dict.update({tax_rank_i: dict()})
 
-    for taxid in species_list:
+    for taxid, count in species_list:
         ranks = tlineage.get_ranks(taxid, ranks=tax_ranks)
         taxid_y = []
         for tax_rank_i in tax_ranks:
-            num_same_tax_rank_i = tax_ranks_dict[tax_rank_i].get(ranks[tax_rank_i][1], 0) + 1
+            num_same_tax_rank_i = tax_ranks_dict[tax_rank_i].get(ranks[tax_rank_i][1], 0) + count
             tax_ranks_dict[tax_rank_i].update({ranks[tax_rank_i][1]: num_same_tax_rank_i})
             taxid_y.append(ranks[tax_rank_i][1])
         species_list_y.append(taxid_y)
@@ -218,7 +203,7 @@ def get_classes_and_weights_multi_tax(species_list, tax_ranks=['superkingdom', '
                 unknown += value
                 classes_tax_i.pop(key)
             else:
-                weight = num_entries/value
+                weight = num_entries / value
                 weight_classes_tax_i.update({key: weight})
 
         unknown += classes_tax_i.get("unknown", 0)
@@ -227,17 +212,83 @@ def get_classes_and_weights_multi_tax(species_list, tax_ranks=['superkingdom', '
         classes.update({tax_ranks[index]: classes_tax_i})
 
         # if unknown != 0:
-        weight = num_entries/unknown if unknown != 0 else 1
+        weight = num_entries / unknown if unknown != 0 else 1
         weight_classes_tax_i.update({'unknown': weight})
 
         # normalize weights see https://scikit-learn.org/stable/modules/generated/sklearn.utils.class_weight.compute_class_weight.html
-        num_classes = len(weight_classes_tax_i)
-        weight_classes_tax_i = {key:value/num_classes for key, value in weight_classes_tax_i.items()}
+        if norm_weights:
+            num_classes = len(weight_classes_tax_i)
+            weight_classes_tax_i = {key: value / num_classes for key, value in weight_classes_tax_i.items()}
         # update global dict with all weights for tax rank i
         weight_classes.update({tax_ranks[index]: weight_classes_tax_i})
 
     species_list_y = np.array(species_list_y)
     species_list_y = np.array([i if i in classes[tax_ranks[j]] else 'unknown' for j in range(len(tax_ranks)) for i in
                                species_list_y[:, j]]).reshape((len(tax_ranks), -1)).swapaxes(0, 1)
+    # after reduction of querys species_list is in different order the unq_idx mask reverses this
+    species_list_y = species_list_y[unq_idx]
 
     return classes, weight_classes, species_list_y
+
+
+class PredictGenerator(Sequence):
+    # TODO sadly this had to be moved here to don't have circular import, it's ugly i know (florian 8.12.20)
+    """Wrapper class around Generators allowing those to be used with
+    `model.predict`
+
+    Acts exactly like the Generator, but yields only the input(s), not
+    the output"""
+
+    def __init__(self, generator, store_x=False):
+        self.g = generator
+        self.store_x = store_x
+        self.targets = []
+        self.x = []
+
+    def __len__(self):
+        return len(self.g)
+
+    def __getitem__(self, idx):
+        batch = self.g[idx]
+        if (not isinstance(batch[0], np.ndarray)):
+            x = batch[0]
+            self.targets.append((idx, batch[1]
+                                 if isinstance(batch[1], np.ndarray)
+                                else batch[1][:]))
+        else:
+            x = batch
+        if (self.store_x):
+            self.x.append((idx, x))
+        return x
+
+    def _get_stored(self, stored):
+        stored = sorted(stored, key=lambda x: x[0])
+        stored = [[s for s in stored if s[0] == i][-1] for i in
+                  range(stored[-1][0] + 1)]
+        if (not all(t[0] == i for i, t in enumerate(stored))):
+            warning('something probably went wrong storing the prediction values', stored)
+        try:
+            return [stored[i][1] for i in
+                    range(stored[-1][0] + 1)]
+        except Exception as e:
+            raise Exception('possibly batch missing in stored values', e)
+
+    def get_targets(self):
+        try:
+            return (np.concatenate(self._get_stored(self.targets))
+                if len(self.targets) > 0 else [])
+        except:
+            if len(self.targets) > 0:
+                stored_targets = self._get_stored(self.targets)
+                # concatenate multiple output
+                return [np.concatenate([np.array(stored_targets[i][j]) for i in range(len(stored_targets))]) for j in range(len(stored_targets[0]))]
+                # return [np.concatenate(stored_targets[:,i]) for i in range(stored_targets[0].shape[0])]
+                # return [np.concatenate(stored_targets[:, i]) for i in range(stored_targets.shape[1])]
+            else:
+                return []
+
+    def get_x(self):
+        if (not self.store_x):
+            warning('option to store x values was not set')
+            return None
+        return self._get_stored(self.x)

@@ -1,8 +1,8 @@
 import argparse
 from preprocessing.process_inputs import ALPHABET
-from preprocessing.generate_data import DataSplit, BatchGenerator, PredictGenerator
+from preprocessing.generate_data import DataSplit, BatchGenerator
 from models.model import PARAMS
-from models.bert_utils import get_token_dict
+from models.bert_utils import get_token_dict, PredictGenerator
 from models.bert_utils import seq2tokens, process_bert_tokens_batch
 from models.bert_utils import load_bert, predict
 from models.bert_nc_finetune import load_fragments, FragmentGenerator
