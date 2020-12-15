@@ -4,41 +4,38 @@ import os.path
 from random import shuffle, sample
 from sklearn.model_selection import train_test_split
 from preprocessing.process_inputs import seq2kmers, ALPHABET
+from preprocessing.generate_data import load_fragments
+from models.model import PARAMS
 from keras_bert import get_model, compile_model
 from keras_bert import gen_batch_inputs
 import argparse
 from keras.callbacks import ModelCheckpoint
 from keras.utils import Sequence
 from models.bert_utils import get_token_dict
-
-
-def load_fragments(fragments_dir, shuffle_=True, balance=True,
-                   nr_seqs=None):
-    fragments = []
-    for class_ in ('Archaea', 'Viruses', 'Eukaryota', 'Bacteria'):
-        fragments.append(json.load(open(os.path.join(
-            fragments_dir, f'{class_}_fragments.json'))))
-    nr_seqs_max = min(len(_) for _ in fragments)
-    if (nr_seqs is None or nr_seqs > nr_seqs_max):
-        nr_seqs = nr_seqs_max
-    fragments_all = []
-    for sk_fragments in fragments:
-        if not balance:
-            fragments_all.extend(sk_fragments)
-        else:
-            fragments_all.extend(sample(sk_fragments, nr_seqs))
-    if (shuffle_):
-        shuffle(fragments_all)
-    print(f'{len(fragments_all)} fragments loaded in total; '
-          f'balanced={balance}, shuffle_={shuffle_}, nr_seqs={nr_seqs}')
-    return fragments_all
-
+from utils.tax_entry import TaxidLineage
 
 class FragmentGenerator(Sequence):
 
-    def __init__(self, fragments, seq_len):
+    def __init__(self, fragments, species, seq_len, class_weights,
+                 cache_lineage=True):
         self.fragments = fragments
+        self.species = species
         self.seq_len = seq_len
+        self.tlineage = TaxidLineage()
+        self.weight_classes = class_weights
+        if (cache_lineage):
+            self.tlineage.populate(species, ['superkingdom'])
+
+    def get_sample_weight(self, taxid):
+        weight = 0
+        ranks = self.tlineage.get_ranks(taxid, ranks=['superkingdom'])
+        superkingdom = ranks['superkingdom'][1]
+        # calc sample weight
+        weight += self.weight_classes['superkingdom'].get(superkingdom,
+                                                          self.weight_classes['superkingdom']['unknown'])
+        # weight += self.weight_classes['kingdom'].get(kingdom,self.weight_classes['kingdom']['unknown'])
+        # weight += self.weight_classes['family'].get(family,self.weight_classes['family']['unknown'])
+        return weight
 
     def __len__(self):
         global batch_size
@@ -49,10 +46,15 @@ class FragmentGenerator(Sequence):
         global token_dict, token_list
         batch_fragments = self.fragments[idx * batch_size:
                                          (idx+1) * batch_size]
+        batch_species = self.species[idx * batch_size:
+                                     (idx+1) * batch_size]
         batch_seqs = [seq2kmers(seq, k=3, stride=3, pad=False, to_upper=True)
                       for seq in batch_fragments]
         sentences = [[seq[:len(seq)//2], seq[len(seq)//2:]]
                      for seq in batch_seqs]
+        return (*gen_batch_inputs(sentences, token_dict, token_list,
+                                  seq_len=self.seq_len),
+                np.array(list(map(self.get_sample_weight, batch_species))))
         return gen_batch_inputs(sentences, token_dict, token_list,
                                 seq_len=self.seq_len)
 
@@ -90,15 +92,27 @@ if __name__ == '__main__':
         dropout_rate=args.dropout_rate)
     compile_model(model)
     model.summary()
+    classes = PARAMS['data']['classes'][1]
     # loading training data
-    fragments = load_fragments(args.fragments_dir, balance=(not args.no_balance),
-                               nr_seqs=args.nr_seqs)
-    f_train, f_val = train_test_split(fragments, test_size=args.val_split)
+    fragments, y, species = load_fragments(
+        args.fragments_dir, classes=classes,
+        shuffle_=True, balance=(not args.no_balance),
+        nr_seqs=args.nr_seqs)
+    f_train, f_val, s_train, s_val, c_train, c_val = train_test_split(
+        fragments, species, y, test_size=args.val_split)
     # f_train = [''.join(random_words(10)) for i in range(100)]
     # f_val = [''.join(random_words(10)) for i in range(10)]
+    train_weights = {'superkingdom': {c: 1 / (len([yi for yi in c_train if yi == c]) / len(c_train))
+                          for c in classes}}
+    train_weights['superkingdom']['unknown'] = 1.0
+    val_weights = {'superkingdom': {c: 1 / (len([yi for yi in c_val if yi == c]) / len(c_val))
+                                    for c in classes}}
+    val_weights['superkingdom']['unknown'] = 1.0
+    train_gen = FragmentGenerator(f_train, s_train, args.seq_len, train_weights)
+    val_gen = FragmentGenerator(f_val, s_val, args.seq_len, val_weights)
     model.fit(
-        FragmentGenerator(f_train, args.seq_len),
+        train_gen,
         epochs=args.epochs,
-        validation_data=FragmentGenerator(f_val, args.seq_len),
+        validation_data=val_gen,
         callbacks=[ModelCheckpoint(args.name + '_ep{epoch:02d}.h5')])
     model.save(args.name + '_trained.h5')

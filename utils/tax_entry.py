@@ -101,7 +101,13 @@ class TaxidLineage:
     def __init__(self):
         from ete3 import NCBITaxa
         self.ncbi = NCBITaxa()
+        self.cache = {}
         self.ncbi.db = sqlite3.connect(self.ncbi.dbfile, check_same_thread=False)
+
+    def populate(self, taxids, ranks=['superkingdom', 'kingdom', 'phylum', 'family']):
+        for taxid in taxids:
+            d = self.ncbi.get_rank(self.ncbi.get_lineage(taxid))
+            self.cache[taxid] = {r: self._get_d_rank(d, r) for r in ranks}
 
     def _get_d_rank(self, d, rank):
         if (rank not in d.values()):
@@ -111,6 +117,8 @@ class TaxidLineage:
         return (taxid[0], name if isinstance(name, str) else 'unknown')
 
     def get_ranks(self, taxid, ranks=['superkingdom', 'kingdom', 'phylum', 'family']):
+        if taxid in self.cache:
+            return self.cache[taxid]
         d = self.ncbi.get_rank(self.ncbi.get_lineage(taxid))
         return {r: self._get_d_rank(d, r) for r in ranks}
         

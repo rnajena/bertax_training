@@ -2,9 +2,8 @@ from os import scandir
 import os.path
 from random import sample, shuffle, choice
 from preprocessing.process_inputs import words2onehot, words2index, words2vec
-from preprocessing.process_inputs import seq2kmers, seq2nucleotides
 from preprocessing.process_inputs import encode_sequence, read_seq
-from preprocessing.process_inputs import get_class_vectors
+from preprocessing.process_inputs import get_class_vectors, ALPHABET
 import numpy as np
 from dataclasses import dataclass, field
 from tensorflow.keras.utils import Sequence
@@ -13,11 +12,11 @@ from logging import info, warning, debug
 import json
 import pickle
 from tqdm import tqdm
-from typing import Optional, Callable, List
+from typing import Optional, Callable, List, Union, Dict
 from Bio.Seq import Seq
-import itertools
 import re
-from sklearn.utils import class_weight as clw
+from models.bert_utils import get_token_dict, seq2tokens
+from utils.tax_entry import TaxidLineage
 
 @dataclass
 class DataSplit:
@@ -379,115 +378,155 @@ class BatchGenerator(Sequence):
 class FragmentGenerator(Sequence):
     x: list
     y: list
-    seq_len: int = 250
+    seq_len: int
+    max_seq_len: Optional[int] = None
     k: int = 3
+    alph: str = ALPHABET
     stride: int = 3
-    batch_size: int = 70
-    classes: List = field(default_factory=lambda:
-                          ['Viruses', 'Archaea', 'Bacteria', 'Eukaryota'])
-    fixed_size_method: str = 'window'
-    enc_method: Callable[[str], list] = words2index
+    batch_size: int = 32
+    classes: Union[List, Dict] = field(default_factory=lambda:
+    ['Viruses', 'Archaea', 'Bacteria', 'Eukaryota'])
+    seq_len_like: Optional[np.array] = None
+    window: bool = False
+    y_species: Optional[List] = None
+    weight_classes: Optional[Dict] = None
+
+    def get_class_vectors_multi_tax(self, taxid):
+        vector = []
+        weight = 0
+        ranks = self.tlineage.get_ranks(taxid, ranks=['superkingdom', 'kingdom', 'family'])
+        superkingdom = ranks['superkingdom'][1]
+        kingdom = ranks['kingdom'][1]
+        family = ranks['family'][1]
+        # calc vector per tax and concatenate
+        # if class not in dict use vector of unknown class
+        vector.extend(self.class_vectors['superkingdom'].get(superkingdom,
+                                                             self.class_vectors['superkingdom']['unknown']))
+        vector.extend(self.class_vectors['kingdom'].get(kingdom,self.class_vectors['kingdom']['unknown']))
+        vector.extend(self.class_vectors['family'].get(family,self.class_vectors['family']['unknown']))
+        # calc sample weight
+        weight += self.weight_classes['superkingdom'].get(superkingdom,
+                                                          self.weight_classes['superkingdom']['unknown'])
+        weight += self.weight_classes['kingdom'].get(kingdom,self.weight_classes['kingdom']['unknown'])
+        weight += self.weight_classes['family'].get(family,self.weight_classes['family']['unknown'])
+        return vector, weight
 
     def __post_init__(self):
-        self.class_vectors = get_class_vectors(self.classes)
-
-    def __len__(self):
-        return np.ceil(len(self.x) /
-                       float(self.batch_size)).astype(np.int)
-
-    def __getitem__(self, idx):
-        batch_fragments = self.x[idx * self.batch_size:
-                                 (idx+1) * self.batch_size]
-        batch_classes = self.y[idx * self.batch_size:
-                               (idx+1) * self.batch_size]
-        batch_y = np.array([self.class_vectors[c] for c in batch_classes])
-        batch_x = np.array([np.array(encode_sequence(
-            seq, self.fixed_size_method, self.enc_method,
-            k=self.k, stride=self.stride,
-            max_seq_len=self.seq_len, handle_nonalph='special'))
-                            for seq in batch_fragments])
-        return (batch_x, batch_y)
-
-
-class PredictGenerator(Sequence):
-    """Wrapper class around Generators allowing those to be used with
-    `model.predict`
-
-    Acts exactly like the Generator, but yields only the input(s), not
-    the output"""
-
-    def __init__(self, generator, store_x=False):
-        self.g = generator
-        self.store_x = store_x
-        self.targets = []
-        self.x = []
-
-    def __len__(self):
-        return len(self.g)
-
-    def __getitem__(self, idx):
-        batch = self.g[idx]
-        if (not isinstance(batch[0], np.ndarray)):
-            x = batch[0]
-            self.targets.append((idx, batch[1]
-                                 if isinstance(batch[1], np.ndarray)
-                                else batch[1][:]))
+        if isinstance(self.classes, list):
+            # single-rank mode
+            self.class_vectors = get_class_vectors(self.classes)
         else:
-            x = batch
-        if (self.store_x):
-            self.x.append((idx, x))
-        return x
+            # multi-rank mode
+            self.tlineage = TaxidLineage()
+            self.class_vectors = dict()
+            for tax_rank in self.classes:
+                self.class_vectors.update({tax_rank: get_class_vectors(self.classes[tax_rank])})
+        self.token_dict = get_token_dict(self.alph, k=self.k)
+        if (self.max_seq_len is None):
+            self.max_seq_len = self.seq_len
 
-    def _get_stored(self, stored):
-        stored = sorted(stored, key=lambda x: x[0])
-        stored = [[s for s in stored if s[0] == i][-1] for i in
-                  range(stored[-1][0] + 1)]
-        if (not all(t[0] == i for i, t in enumerate(stored))):
-            warning('something probably went wrong storing the prediction values', stored)
-        try:
-            return [stored[i][1] for i in
-                    range(stored[-1][0] + 1)]
-        except Exception as e:
-            raise Exception('possibly batch missing in stored values', e)
+    def __len__(self):
+        return np.ceil(len(self.x)
+                       / float(self.batch_size)).astype(np.int)
 
-    def get_targets(self):
-        try:
-            return (np.concatenate(self._get_stored(self.targets))
-                if len(self.targets) > 0 else [])
-        except:
-            if len(self.targets) > 0:
-                stored_targets = np.array(self._get_stored(self.targets))
-                # concatenate multiple output
-                return [np.concatenate(stored_targets[:,i]) for i in range(stored_targets.shape[1])]
+    def __getitem__(self, idx):
+        """returns batch with specified number.
+
+        If the instance was created with targets, inputs and outputs
+        are returned, otherwise just the inputs. If multiple ranks
+        were provided at creation via the `classes` attribute, weights
+        are returned as well.
+        """
+        batch_fragments = self.x[idx * self.batch_size:
+                                 (idx + 1) * self.batch_size]
+        batch_x = [seq2tokens(seq, self.token_dict, seq_length=self.seq_len,
+                              max_length=self.max_seq_len,
+                              k=self.k, stride=self.stride, window=self.window,
+                              seq_len_like=self.seq_len_like)
+                   for seq in batch_fragments]
+        if (self.y is not None and len(self.y) != 0):
+            # inputs + outputs
+            if (isinstance(self.classes, list)):
+                # single rank mode
+                batch_classes = self.y[idx * self.batch_size:
+                                       (idx + 1) * self.batch_size]
+                batch_y = np.array([self.class_vectors[c] for c in batch_classes])
+                return ([np.array([_[0] for _ in batch_x]),
+                         np.array([_[1] for _ in batch_x])], [batch_y])
             else:
-                return []
+                # multiple rank mode
+                batch_classes = self.y_species[idx * self.batch_size:
+                                   (idx + 1) * self.batch_size]
+                batch_y, weights = zip(*[self.get_class_vectors_multi_tax(taxid) for taxid in batch_classes])
+                X = [np.array([_[0] for _ in batch_x]),np.array([_[1] for _ in batch_x])]
+                y = np.array(batch_y)
+                weights = np.array(weights)
+                return (X, y, weights)
+        else:
+            # only inputs
+            return [np.array([_[0] for _ in batch_x]),
+                    np.array([_[1] for _ in batch_x])]
 
-    def get_x(self):
-        if (not self.store_x):
-            warning('option to store x values was not set')
-            return None
-        return self._get_stored(self.x)
+
+# def load_fragments(fragments_dir, classes, shuffle_=True, nr_seqs=None):
+#     x = []
+#     y = []
+#     for class_ in classes:
+#         fragments = json.load(open(os.path.join(
+#             fragments_dir, f'{class_}_fragments.json')))
+#         if (nr_seqs is not None):
+#             if (not shuffle_):
+#                 warning('fragments *will* be shuffled because nr_seqs is specified')
+#             fragments = sample(fragments, min(nr_seqs, len(fragments)))
+#         for fragment in fragments:
+#             x.append(fragment)
+#             y.append(class_)
+#     if (shuffle_):
+#         to_shuffle = list(zip(x, y))
+#         shuffle(to_shuffle)
+#         x, y = zip(*to_shuffle)
+#     return x, y
 
 
-def load_fragments(fragments_dir, classes, shuffle_=True, nr_seqs=None):
+def load_fragments(fragments_dir, classes, shuffle_=True, balance=True, nr_seqs=None):
+    fragments = []
+    species_list = []
+    for class_ in classes:
+        fragments.append((class_, json.load(open(os.path.join(
+            fragments_dir, f'{class_}_fragments.json')))))
+        species_list.append([int(line.strip()) for line in
+                        open(os.path.join(fragments_dir, f'{class_}_species_picked.txt')).readlines()])
+    nr_seqs_max = min(len(_[1]) for _ in fragments)
+    if (nr_seqs is None or nr_seqs > nr_seqs_max):
+        nr_seqs = nr_seqs_max
     x = []
     y = []
-    for class_ in classes:
-        fragments = json.load(open(os.path.join(
-            fragments_dir, f'{class_}_fragments.json')))
-        if (nr_seqs is not None):
-            if (not shuffle_):
-                warning('fragments *will* be shuffled because nr_seqs is specified')
-            fragments = sample(fragments, min(nr_seqs, len(fragments)))
-        for fragment in fragments:
-            x.append(fragment)
-            y.append(class_)
-    if (shuffle_):
-        to_shuffle = list(zip(x, y))
-        shuffle(to_shuffle)
-        x, y = zip(*to_shuffle)
-    return x, y
+    y_species = []
 
+    for index, fragments_i in enumerate(fragments):
+        class_, class_fragments = fragments_i
+        if not balance:
+            x.extend(class_fragments)
+            y.extend([class_] * len(class_fragments))
+            y_species.extend(species_list[index])
+
+        else:
+            x_help = list(zip(class_fragments,species_list[index]))
+            # x.extend(sample(class_fragments, nr_seqs))
+            x_help = sample(x_help, nr_seqs)
+            x_help, y_species_help = zip(*x_help)
+            x.extend(x_help)
+            y_species.extend(y_species_help)
+            y.extend([class_] * nr_seqs)
+
+    assert len(x) == len(y)
+    if (shuffle_):
+        to_shuffle = list(zip(x, y, y_species))
+        shuffle(to_shuffle)
+        x, y, y_species = zip(*to_shuffle)
+    print(f'{len(x)} fragments loaded in total; '
+          f'balanced={balance}, shuffle_={shuffle_}, nr_seqs={nr_seqs}')
+    return x, y, y_species
 
 
 def gen_files():

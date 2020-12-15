@@ -1,14 +1,16 @@
-from models.bert_nc_finetune import load_fragments,get_classes_and_weights_multi_tax
+from models.bert_nc_finetune import load_fragments
+from models.bert_utils import get_classes_and_weights_multi_tax
 import argparse
 import pandas as pd
 import itertools
 from utils.tax_entry import TaxidLineage
 import time
 import numpy as np
+import os
 
 def choose_sub_class_to_cut_out(tax_list, upper_rank, lower_rank):
     # e.g {phylum: {class1: [taxid1,...], class2: []}
-    lineage_list = [tlineage.get_ranks(i, ranks=[upper_rank,lower_rank]) for i in tax_list]
+    lineage_list = [tlineage.get_ranks(i, ranks=[upper_rank, lower_rank]) for i in tax_list]
 
     interest_dict = {}
 
@@ -33,10 +35,10 @@ def choose_sub_class_to_cut_out(tax_list, upper_rank, lower_rank):
         min_diff_to_threshold = 1e10
         best_combo = None
         start = time.time()
-        lowers_len = {c:len(lowers[c]) for c in lowers.keys()}
-        for r in range(1,5):
+        lowers_len = {c: len(lowers[c]) for c in lowers.keys()}
+        for r in range(1, 5):
             for combo in itertools.combinations(lowers, r):
-                s = sum(lowers_len[c] for c in combo) #s = sum(len(lowers[c]) for c in combo)
+                s = sum(lowers_len[c] for c in combo)  # s = sum(len(lowers[c]) for c in combo)
                 diff = abs(threshold - s)
                 if diff < min_diff_to_threshold:
                     min_diff_to_threshold = diff
@@ -58,14 +60,17 @@ def choose_sub_class_to_cut_out(tax_list, upper_rank, lower_rank):
 
     return upper_to_chosen_ids
 
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
         description='make dataset for multiple architecture testing')
     parser.add_argument('fragments_dir')
+    parser.add_argument('out_dir')
     parser.add_argument('--nr_seqs', help=' ', type=int, default=None)
     parser.add_argument('--unbalanced', help=' ', action='store_true')
     parser.add_argument('--filtered', help=' ', action='store_true')
+    parser.add_argument('--no_unknown', help=' ', action='store_true')
 
     tlineage = TaxidLineage()
     args = parser.parse_args()
@@ -75,23 +80,28 @@ if __name__ == '__main__':
     x, y, y_species = load_fragments(args.fragments_dir, nr_seqs=args.nr_seqs, balance=not args.unbalanced)
     # parent_dict, scientific_names, common_names, phylo_names, genbank_common_name, scientific_names_inv, common_names_inv = get_dicts()
     classes, weight_classes, species_list_y = get_classes_and_weights_multi_tax(y_species,
-                                                                                tax_ranks=['superkingdom', 'phylum'])
+                                                                                tax_ranks=['superkingdom', 'phylum',
+                                                                                           'genus'], unknown_thr=10000)
+    # tax_ranks=['superkingdom', 'phylum'])
 
+    dir = args.out_dir
+    # dir = "/home/go96bix/projects/dna_class/resources/"
+    assert os.path.isfile(dir)==False, f"{dir} is a file, please set a directory as out_dir"
+    if os.path.isdir(dir):
+        pass
+    else:
+        os.makedirs(dir)
 
-
-
-    dir = "/home/go96bix/projects/dna_class/resources/"
-    mask = species_list_y[:, 1] != "unknown"
-    x = x[mask]
-    y = y[mask]
-    y_species = y_species[mask]
-    species_list_y = species_list_y[mask]
-
-
+    if args.no_unknown:
+        mask = species_list_y[:, 1] != "unknown"
+        x = x[mask]
+        y = y[mask]
+        y_species = y_species[mask]
+        species_list_y = species_list_y[mask]
 
     if args.filtered:
         dir += "filtered/"
-        ids_to_filter = choose_sub_class_to_cut_out(y_species,"phylum","genus")
+        ids_to_filter = choose_sub_class_to_cut_out(y_species, "phylum", "genus")
         ids_to_filter_list = np.unique(np.array([j for i in ids_to_filter.values() for j in i]))
         num_samples_to_draw = min([len(i) for i in ids_to_filter.values()])
         # mask_test = [i in ids_to_filter_list for i in y_species]
@@ -101,7 +111,7 @@ if __name__ == '__main__':
         y_species_test = y_species[mask_test]
         species_list_y_test = species_list_y[mask_test]
         df_test = pd.DataFrame({"x": x_test, "y": y_test, "tax_id": y_species_test,
-                                "superkingdom": species_list_y_test[:, 0],"phylum": species_list_y_test[:, 1]})
+                                "superkingdom": species_list_y_test[:, 0], "phylum": species_list_y_test[:, 1]})
         df_test = df_test.groupby("phylum").sample(n=num_samples_to_draw, random_state=1)
 
         not_mask_test = np.logical_not(mask_test)
