@@ -2,6 +2,7 @@ from os import scandir
 import os.path
 from random import sample, shuffle, choice
 from preprocessing.process_inputs import words2onehot, words2index, words2vec
+from preprocessing.process_inputs import seq2kmers, seq2nucleotides
 from preprocessing.process_inputs import encode_sequence, read_seq
 from preprocessing.process_inputs import get_class_vectors, ALPHABET
 import numpy as np
@@ -14,7 +15,9 @@ import pickle
 from tqdm import tqdm
 from typing import Optional, Callable, List, Union, Dict
 from Bio.Seq import Seq
+import itertools
 import re
+from sklearn.utils import class_weight as clw
 from models.bert_utils import get_token_dict, seq2tokens
 from utils.tax_entry import TaxidLineage
 
@@ -466,6 +469,58 @@ class FragmentGenerator(Sequence):
             # only inputs
             return [np.array([_[0] for _ in batch_x]),
                     np.array([_[1] for _ in batch_x])]
+
+
+class PredictGenerator(Sequence):
+    """Wrapper class around Generators allowing those to be used with
+    `model.predict`
+
+    Acts exactly like the Generator, but yields only the input(s), not
+    the output"""
+
+    def __init__(self, generator, store_x=False):
+        self.g = generator
+        self.store_x = store_x
+        self.targets = []
+        self.x = []
+
+    def __len__(self):
+        return len(self.g)
+
+    def __getitem__(self, idx):
+        batch = self.g[idx]
+        if (not isinstance(batch[0], np.ndarray)):
+            x = batch[0]
+            self.targets.append((idx, batch[1]
+                                 if isinstance(batch[1], np.ndarray)
+                                 else batch[1][0]))
+        else:
+            x = batch
+        if (self.store_x):
+            self.x.append((idx, x))
+        return x
+
+    def _get_stored(self, stored):
+        stored = sorted(stored, key=lambda x: x[0])
+        stored = [[s for s in stored if s[0] == i][-1] for i in
+                  range(stored[-1][0] + 1)]
+        if (not all(t[0] == i for i, t in enumerate(stored))):
+            warning('something probably went wrong storing the prediction values', stored)
+        try:
+            return [stored[i][1] for i in
+                    range(stored[-1][0] + 1)]
+        except Exception as e:
+            raise Exception('possibly batch missing in stored values', e)
+
+    def get_targets(self):
+        return (np.concatenate(self._get_stored(self.targets))
+                if len(self.targets) > 0 else [])
+
+    def get_x(self):
+        if (not self.store_x):
+            warning('option to store x values was not set')
+            return None
+        return self._get_stored(self.x)
 
 
 # def load_fragments(fragments_dir, classes, shuffle_=True, nr_seqs=None):
