@@ -4,7 +4,6 @@ from tensorflow import keras
 import keras_bert
 import tensorflow as tf
 from preprocessing.process_inputs import seq2kmers, ALPHABET
-from preprocessing.generate_data import PredictGenerator
 from random import randint
 import numpy as np
 from itertools import product
@@ -136,6 +135,7 @@ def process_bert_tokens_batch(batch_x):
 
 def predict(model, test_generator, roc_auc=True, classes=None,
             return_data=False, store_x=False, nonverbose=False, calc_metrics=True):
+    from preprocessing.generate_data import PredictGenerator # prevent cyclic import
     predict_g = PredictGenerator(test_generator, store_x=store_x)
     preds = model.predict(predict_g, verbose=0 if nonverbose else 1)
 
@@ -168,7 +168,7 @@ def get_classes_and_weights_multi_tax(species_list, tax_ranks=['superkingdom', '
                                       unknown_thr=10_000):
     from utils.tax_entry import TaxidLineage
     tlineage = TaxidLineage()
-    
+
     classes = dict()
     weight_classes = dict()
     tax_ranks_dict = dict()
