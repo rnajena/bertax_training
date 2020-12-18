@@ -264,8 +264,8 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     tax_ranks = ["superkingdom", "phylum", "genus"]
-    test = False
-    norm_weights = False
+    test = True
+    norm_weights = True
 
     learning_rate = args.learning_rate
     if (args.seq_len_like is not None):
@@ -332,7 +332,7 @@ if __name__ == '__main__':
     if test:
         from models.bert_utils import load_bert
         # model = load_bert("/home/go96bix/projects/dna_class/resources/bert_nc_C2_filtered_model.best.loss.hdf5", compile_=True)
-        model = load_bert("/home/go96bix/projects/dna_class/resources/bert_nc_C2_big_trainingset_all_model.best.acc.hdf5", compile_=True)
+        model = load_bert("/home/go96bix/projects/dna_class/resources/bert_nc_C2_big_trainingset_all_norm_weights_model.best.loss.hdf5", compile_=True)
         max_length = model.input_shape[0][1]
     else:
         # building model
@@ -426,7 +426,7 @@ if __name__ == '__main__':
         #     args.roc_auc, classes, return_data=args.store_predictions, calc_metrics=False)
         # y_true_val, y_pred_val = predicted_val["data"]
         #
-        # for i in range(len(y_pred)):
+        for i in range(len(y_pred)):
         #     np_val = pd.crosstab(np.argmax(np.array(y_true_val[i]), axis=1), np.argmax(np.array(y_pred_val[i]), axis=1)).values
         #     # reorder output according to best val prediction
         #     print(np.argmax(np_val, axis=1), f'all {len(np.argmax(np_val, axis=1))}', f'unique {len(np.unique(np.argmax(np_val, axis=1)))}')
@@ -441,13 +441,17 @@ if __name__ == '__main__':
         #     # sorted_names = np.array(sorted(classes))
         #     # print(pd.crosstab(sorted_names[np.argmax(np.array(y_true[i]),axis=1)], sorted_names[np.argmax(np.array(y_pred[i]),axis=1)],
         #     #                   rownames=['True'], colnames=['Predicted'], margins=True))
+            acc = balanced_accuracy_score(np.argmax(y_true[i], axis=1), np.argmax(y_pred[i], axis=1))
+            print(f"{test_g.tax_ranks[i]} acc:", acc)
+            print(pd.crosstab(np.argmax(np.array(y_true[i]), axis=1), np.argmax(np.array(y_pred[i]), axis=1),
+                              rownames=['True'], colnames=['Predicted'], margins=True))
         result = predicted['metrics']
         metrics_names = predicted['metrics_names']
         if (args.store_predictions):
             import pickle
 
             if test:
-                pickle.dump(predicted, open("/home/go96bix/projects/dna_class/resources/" + "big_trainingset_all"
+                pickle.dump(predicted, open("/home/go96bix/projects/dna_class/resources/" + "big_trainingset_all_normed"
                                     + '_predictions.pkl', 'wb'))
             else:
                 pickle.dump(predicted, open(os.path.splitext(save_path)[0]
