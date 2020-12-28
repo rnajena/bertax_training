@@ -71,6 +71,8 @@ if __name__ == '__main__':
     parser.add_argument('--unbalanced', help=' ', action='store_true')
     parser.add_argument('--filtered', help=' ', action='store_true')
     parser.add_argument('--no_unknown', help=' ', action='store_true')
+    parser.add_argument('--num_min_train_samples', help=' ', type=int, default=10000)
+    parser.add_argument('--num_test_samples', help=' ', type=int, default=2000)
 
     tlineage = TaxidLineage()
     args = parser.parse_args()
@@ -81,7 +83,7 @@ if __name__ == '__main__':
     # parent_dict, scientific_names, common_names, phylo_names, genbank_common_name, scientific_names_inv, common_names_inv = get_dicts()
     classes, weight_classes, species_list_y = get_classes_and_weights_multi_tax(y_species,
                                                                                 tax_ranks=['superkingdom', 'phylum',
-                                                                                           'genus'], unknown_thr=10000)
+                                                                                           'genus'], unknown_thr=args.num_test_samples+args.num_min_train_samples)
     # tax_ranks=['superkingdom', 'phylum'])
 
     dir = args.out_dir

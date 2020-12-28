@@ -2,7 +2,7 @@ import pandas as pd
 
 if __name__ == '__main__':
 
-    dir = "/home/go96bix/projects/dna_class/resources/"
+    dir = "/home/go96bix/projects/dna_class/resources/big_set/"
 
     df_test = pd.read_csv(dir + "test.tsv", sep="\t", index_col=None)
     df_train = pd.read_csv(dir + "train.tsv", sep="\t", index_col=None)

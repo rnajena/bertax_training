@@ -165,7 +165,7 @@ def predict(model, test_generator, roc_auc=True, classes=None,
             'x': predict_g.get_x() if return_data and store_x else None}
 
 
-def get_classes_and_weights_multi_tax(species_list, tax_ranks=['superkingdom', 'kingdom', 'family'],
+def get_classes_and_weights_multi_tax(species_list, classes_preset=None, tax_ranks=['superkingdom', 'kingdom', 'family'],
                                       unknown_thr=10_000, norm_weights=True):
     from utils.tax_entry import TaxidLineage
     tlineage = TaxidLineage()
@@ -191,18 +191,26 @@ def get_classes_and_weights_multi_tax(species_list, tax_ranks=['superkingdom', '
             taxid_y.append(ranks[tax_rank_i][1])
         species_list_y.append(taxid_y)
 
-    for index, key in enumerate(tax_ranks_dict.keys()):
-        dict_ = tax_ranks_dict[key]
+    for index, tax_rank_i in enumerate(tax_ranks_dict.keys()):
+        dict_ = tax_ranks_dict[tax_rank_i]
         classes_tax_i = dict_.copy()
         unknown = 0
         weight_classes_tax_i = dict()
         for key, value in dict_.items():
-            if value < unknown_thr:
-                unknown += value
-                classes_tax_i.pop(key)
+            if classes_preset is not None:
+                if key not in classes_preset[tax_rank_i]:
+                    unknown += value
+                    classes_tax_i.pop(key)
+                else:
+                    weight = num_entries / value
+                    weight_classes_tax_i.update({key: weight})
             else:
-                weight = num_entries / value
-                weight_classes_tax_i.update({key: weight})
+                if value < unknown_thr:
+                    unknown += value
+                    classes_tax_i.pop(key)
+                else:
+                    weight = num_entries / value
+                    weight_classes_tax_i.update({key: weight})
 
         unknown += classes_tax_i.get("unknown", 0)
         # if unknown != 0:

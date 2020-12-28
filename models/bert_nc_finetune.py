@@ -235,6 +235,43 @@ def get_fine_model_multi_tax(pretrained_model_file, num_classes, tax_ranks):
 
     return model_fine, max_length
 
+def prepare_training_val_weights_for_multitax(train_x, train_y, train_y_species, unknown_thr=8000, gen_test_set=False):
+    """
+    1. find classes of interest
+    2. split train and val set
+    3. identify which of the classes now do not match old threshold
+    4. adapt threshold and recalculate classes, weights, etc
+
+    unknown: set to total samples per class - samples in test set
+    e.g. total 10000 and 2000 in test set --> 8000
+    """
+    classes_, weight_classes_, species_list_y_ = get_classes_and_weights_multi_tax(train_y_species,
+                                                                                tax_ranks=tax_ranks, unknown_thr=unknown_thr,
+                                                                                norm_weights=norm_weights)
+    train_x = list(zip(train_x, train_y_species))
+
+    train_x, val_x, train_y, val_y = train_test_split(train_x, train_y, test_size=0.05, stratify=train_y)
+
+    if gen_test_set:
+        train_x, test_x, train_y, test_y = train_test_split(train_x, train_y, test_size=0.2, stratify=train_y)
+
+    train_x, train_y_species = zip(*train_x)
+    val_x, val_y_species = zip(*val_x)
+    train_x, val_x = [np.array(i, dtype=object) for i in [train_x, val_x]]
+    train_y_species, val_y_species = [np.array(i) for i in [train_y_species, val_y_species]]
+    # train_idx = train_y.index.values
+    # train_taxID = species_list_y_[train_idx]
+
+    classes_, weight_classes_, species_list_y_ = get_classes_and_weights_multi_tax(train_y_species,
+                                                                                   classes_preset=classes_,
+                                                                                tax_ranks=tax_ranks,
+                                                                                norm_weights=norm_weights)
+
+    if gen_test_set:
+        test_x, test_y_species = zip(*test_x)
+        return train_x, train_y, train_y_species, val_x, val_y, val_y_species, classes_, weight_classes_, species_list_y_, test_x, test_y, test_y_species
+
+    return train_x, train_y, train_y_species, val_x, val_y, val_y_species, classes_, weight_classes_, species_list_y_
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(
@@ -264,7 +301,7 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     tax_ranks = ["superkingdom", "phylum", "genus"]
-    test = True
+    test = False
     norm_weights = True
 
     learning_rate = args.learning_rate
@@ -285,17 +322,9 @@ if __name__ == '__main__':
 
         if args.multi_tax:
             x, y, y_species = load_fragments(args.fragments_dir, balance=False, nr_seqs=args.nr_seqs)
-            x_help = list(zip(x, y_species))
-            f_train_x, f_test_x, f_train_y, f_test_y = train_test_split(
-                x_help, y, test_size=0.2, stratify=y)
-            f_train_x, f_val_x, f_train_y, f_val_y = train_test_split(
-                f_train_x, f_train_y, test_size=0.05, stratify=f_train_y)
-            f_train_x, f_train_y_species = zip(*f_train_x)
-            f_val_x, f_val_y_species = zip(*f_val_x)
-            f_test_x, f_test_y_species = zip(*f_test_x)
-
-            classes, weight_classes, species_list_y = get_classes_and_weights_multi_tax(f_train_y_species,
-                                                                                        tax_ranks=tax_ranks,norm_weights=norm_weights)
+            f_train_x, f_train_y, f_train_y_species, f_val_x, f_val_y, f_val_y_species, classes, weight_classes, species_list_y,  test_x, test_y, \
+            test_y_species = prepare_training_val_weights_for_multitax(x, y, y_species, unknown_thr=10000,
+                                                                                 gen_test_set=True)
 
         else:
             x, y, y_species = load_fragments(args.fragments_dir, nr_seqs=args.nr_seqs)
@@ -320,15 +349,12 @@ if __name__ == '__main__':
             #                                                                             tax_ranks=tax_ranks,
             #                                                                             unknown_thr=0)
         else:
-            f_test_x, f_test_y, f_test_y_species = load_dataset("/beegfs/go96bix/genomic_fragments_80_big/test.tsv")
-            f_train_x, f_train_y, f_train_y_species = load_dataset("/beegfs/go96bix/genomic_fragments_80_big/train.tsv")
-        f_train_x = list(zip(f_train_x, f_train_y_species))
-        f_train_x, f_val_x, f_train_y, f_val_y = train_test_split(f_train_x, f_train_y, test_size=0.05,
-                                                                  stratify=f_train_y)
-        f_train_x, f_train_y_species = zip(*f_train_x)
-        f_val_x, f_val_y_species = zip(*f_val_x)
-        classes, weight_classes, species_list_y = get_classes_and_weights_multi_tax(f_train_y_species,
-                                                                                    tax_ranks=tax_ranks, unknown_thr=10000, norm_weights=norm_weights)
+            f_test_x, f_test_y, f_test_y_species = load_dataset("/home/go96bix/projects/dna_class/resources/big_set/test.tsv")
+            f_train_x, f_train_y, f_train_y_species = load_dataset("/home/go96bix/projects/dna_class/resources/big_set/train.tsv")
+
+        f_train_x, f_train_y, f_train_y_species, f_val_x, f_val_y, f_val_y_species, classes, weight_classes, species_list_y = prepare_training_val_weights_for_multitax(f_train_x, f_train_y, f_train_y_species, unknown_thr=10000)
+
+
     if test:
         from models.bert_utils import load_bert
         # model = load_bert("/home/go96bix/projects/dna_class/resources/bert_nc_C2_filtered_model.best.loss.hdf5", compile_=True)
