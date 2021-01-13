@@ -24,7 +24,7 @@ Contains:
   | pre-training | genomic   | [[file:models/bert_nc.py]]          |
   | fine-tuning  | coding    | [[file:models/bert_finetune.py]]    |
   | fine-tuning  | genomic   | [[file:models/bert_nc_finetune.py]] |
-  
+
 ** =preprocessing=
 Utilities for sequence input, encoding and model input generation:
 - [[file:preprocessing/process_inputs.py]] :: functions for reading in
@@ -137,6 +137,13 @@ The best-performing fine-tuned BERT models ready to use are contained in the
 directory =resources/=.
 
 For this script =--help= provides further usage information.
+** Visualization
+
+To visualize a trained model, use [[file:utils/bertviz_js.py]]:
+#+begin_src sh
+python -m utils.bertviz_js test/random_archaean_fragment.fa resources/bert_nc_C2_final.h5 -a 441 -n 30
+#+end_src
+
 * Dependencies
 - tensorflow >= 2
 - keras
@@ -145,3 +152,8 @@ For this script =--help= provides further usage information.
 - scikit-learn
 - keras-bert
 - keras-tcn
+
+** Visualization
+- torch
+- transformers
+- bio
