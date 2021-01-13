@@ -141,8 +141,10 @@ For this script =--help= provides further usage information.
 
 To visualize a trained model, use [[file:utils/bertviz_js.py]]:
 #+begin_src sh
-python -m utils.bertviz_js test/random_archaean_fragment.fa resources/bert_nc_C2_final.h5 -a 441 -n 30
+python -m utils.bertviz_js test/random_archaean_fragment.fa resources/bert_nc_C2_final.h5 -a 441 -n 30 --mode head
 #+end_src
+
+Note, that using long sequences (> 150 tokens) puts a heavy burden on memory and performance.
 
 * Dependencies
 - tensorflow >= 2

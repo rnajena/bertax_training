@@ -22,6 +22,8 @@ def parse_arguments():
                         default=0)
     parser.add_argument('-n', type=int, help='sequence size (default: 500)',
                         default=500)
+    parser.add_argument('--mode', choices=['head', 'model'],
+                        default='head', help='head view or model view (default: head)')
     return parser.parse_args()
 
 def js_data(tmodel, in_ids):
@@ -66,15 +68,15 @@ if __name__ == '__main__':
         <script>
           require.config({
               paths: {
-                  d3: 'https://cdnjs.cloudflare.com/ajax/libs/d3/3.4.8/d3.min',
+                  d3: 'https://cdnjs.cloudflare.com/ajax/libs/d3/5.7.0/d3.min',
                   jquery: 'https://ajax.googleapis.com/ajax/libs/jquery/2.0.0/jquery.min',
               }
           });
         </script>
         <script src="view_data.js"></script>
-        <script src="bertviz/bertviz/head_view.js"></script>
+        <script src="bertviz/bertviz/%s_view.js"></script>
       </body>
-    </html>"""
+    </html>"""%(args.mode)
     with open('view_model.html', 'w') as f:
         f.write(html)
     webbrowser.open('view_model.html')
