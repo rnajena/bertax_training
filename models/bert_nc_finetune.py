@@ -21,6 +21,9 @@ from os.path import splitext
 import pandas as pd
 from sklearn.metrics import balanced_accuracy_score
 
+# /home/go96bix/projects/dna_class/resources/bert_nc_C2_final.h5 /home/go96bix/projects/dna_class/resources/big_set --store_predictions --test_benchmark --multi_tax
+# devices = tf.config.experimental.list_physical_devices('GPU')
+# tf.config.experimental.set_memory_growth(devices[0], True)
 # policy = mixed_precision.Policy('mixed_float16')
 # mixed_precision.set_policy(policy)
 # # os.environ['TF_ENABLE_AUTO_MIXED_PRECISION'] = '1'
@@ -235,7 +238,7 @@ def get_fine_model_multi_tax(pretrained_model_file, num_classes, tax_ranks):
 
     return model_fine, max_length
 
-def prepare_training_val_weights_for_multitax(train_x, train_y, train_y_species, unknown_thr=8000, gen_test_set=False):
+def prepare_training_val_weights_for_multitax(train_x, train_y, train_y_species,classes_preset=None, unknown_thr=8000, gen_test_set=False):
     """
     1. find classes of interest
     2. split train and val set
@@ -245,9 +248,12 @@ def prepare_training_val_weights_for_multitax(train_x, train_y, train_y_species,
     unknown: set to total samples per class - samples in test set
     e.g. total 10000 and 2000 in test set --> 8000
     """
-    classes_, weight_classes_, species_list_y_ = get_classes_and_weights_multi_tax(train_y_species,
-                                                                                tax_ranks=tax_ranks, unknown_thr=unknown_thr,
-                                                                                norm_weights=norm_weights)
+    if classes is None:
+        classes_, weight_classes_, species_list_y_ = get_classes_and_weights_multi_tax(train_y_species,
+                                                                                    tax_ranks=tax_ranks, unknown_thr=unknown_thr,
+                                                                                    norm_weights=norm_weights)
+    else:
+        classes_ = classes_preset
     train_x = list(zip(train_x, train_y_species))
 
     train_x, val_x, train_y, val_y = train_test_split(train_x, train_y, test_size=0.05, stratify=train_y)
@@ -300,7 +306,8 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
 
-    tax_ranks = ["superkingdom", "phylum", "genus"]
+    # tax_ranks = ["superkingdom", "phylum", "genus"]
+    tax_ranks = ["superkingdom", "phylum"]
     test = False
     norm_weights = True
 
@@ -323,7 +330,7 @@ if __name__ == '__main__':
         if args.multi_tax:
             x, y, y_species = load_fragments(args.fragments_dir, balance=False, nr_seqs=args.nr_seqs)
             f_train_x, f_train_y, f_train_y_species, f_val_x, f_val_y, f_val_y_species, classes, weight_classes, species_list_y,  test_x, test_y, \
-            test_y_species = prepare_training_val_weights_for_multitax(x, y, y_species, unknown_thr=10000,
+            test_y_species = prepare_training_val_weights_for_multitax(x, y, y_species, unknown_thr=8000,
                                                                                  gen_test_set=True)
 
         else:
@@ -335,24 +342,17 @@ if __name__ == '__main__':
 
     else:
         if test:
-            f_test_x, f_test_y, f_test_y_species = load_dataset("/home/go96bix/projects/dna_class/resources/big_set/test.tsv")
-            f_train_x, f_train_y, f_train_y_species = load_dataset("/home/go96bix/projects/dna_class/resources/big_set/train.tsv")
+            f_test_x, f_test_y, f_test_y_species = load_dataset(os.path.join(args.fragments_dir,"test.tsv"))
+            f_train_x, f_train_y, f_train_y_species = load_dataset(os.path.join(args.fragments_dir,"train.tsv"))
+            classes = pickle.load(open(os.path.join(args.fragments_dir,"classes.pkl"),'rb'))
 
-            # f_train_x = list(zip(f_train_x, f_train_y_species))
-            # f_train_x, f_val_x, f_train_y, f_val_y = train_test_split(f_train_x, f_train_y, test_size=0.05,
-            #                                                           stratify=f_train_y)
-            # f_train_x, f_train_y_species = zip(*f_train_x)
-            # f_val_x, f_val_y_species = zip(*f_val_x)
-            #
-            # f_train_y_species = pd.unique(f_train_y_species)
-            # classes, weight_classes, species_list_y = get_classes_and_weights_multi_tax(f_train_y_species,
-            #                                                                             tax_ranks=tax_ranks,
-            #                                                                             unknown_thr=0)
         else:
-            f_test_x, f_test_y, f_test_y_species = load_dataset("/home/go96bix/projects/dna_class/resources/big_set/test.tsv")
-            f_train_x, f_train_y, f_train_y_species = load_dataset("/home/go96bix/projects/dna_class/resources/big_set/train.tsv")
+            f_test_x, f_test_y, f_test_y_species = load_dataset(os.path.join(args.fragments_dir,"test.tsv"))
+            f_train_x, f_train_y, f_train_y_species = load_dataset(os.path.join(args.fragments_dir,"train.tsv"))
+            classes = pickle.load(open(os.path.join(args.fragments_dir,"classes.pkl"),'rb'))
 
-        f_train_x, f_train_y, f_train_y_species, f_val_x, f_val_y, f_val_y_species, classes, weight_classes, species_list_y = prepare_training_val_weights_for_multitax(f_train_x, f_train_y, f_train_y_species, unknown_thr=10000)
+
+        f_train_x, f_train_y, f_train_y_species, f_val_x, f_val_y, f_val_y_species, classes, weight_classes, species_list_y = prepare_training_val_weights_for_multitax(f_train_x, f_train_y, f_train_y_species, classes_preset=classes)
 
 
     if test:
@@ -379,7 +379,7 @@ if __name__ == '__main__':
     model.summary()
 
     if not test:
-        name="_big_trainingset_all_norm_weights"
+        name="_small_trainingset_filtered_fix_classes_selection"
         # name="_all"
         filepath1 = splitext(args.pretrained_bert)[0] +name+ "_model.best.acc.hdf5"
         filepath2 = splitext(args.pretrained_bert)[0] +name+ "_model.best.loss.hdf5"

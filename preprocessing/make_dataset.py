@@ -7,6 +7,7 @@ from utils.tax_entry import TaxidLineage
 import time
 import numpy as np
 import os
+import pickle
 
 def choose_sub_class_to_cut_out(tax_list, upper_rank, lower_rank):
     # e.g {phylum: {class1: [taxid1,...], class2: []}
@@ -15,7 +16,7 @@ def choose_sub_class_to_cut_out(tax_list, upper_rank, lower_rank):
     interest_dict = {}
 
     for tax_entry in lineage_list:
-        upper_taxid, upper = tax_entry[upper_rank][1]
+        upper_taxid, upper = tax_entry[upper_rank]
         lower_taxid, lower = tax_entry[lower_rank]
         if upper_taxid is None or lower_taxid is None:
             continue
@@ -31,11 +32,13 @@ def choose_sub_class_to_cut_out(tax_list, upper_rank, lower_rank):
     min_sum = 2000
     best_sum = 0
     # print("dict_len", interest_dict.keys())
-    for upper, lowers in interest_dict.items():
+    for upper in sorted(interest_dict.keys()):
+        lowers = interest_dict[upper]
         min_diff_to_threshold = 1e10
         best_combo = None
         start = time.time()
         lowers_len = {c: len(lowers[c]) for c in lowers.keys()}
+        finish=False
         for r in range(1, 5):
             for combo in itertools.combinations(lowers, r):
                 s = sum(lowers_len[c] for c in combo)  # s = sum(len(lowers[c]) for c in combo)
@@ -47,7 +50,10 @@ def choose_sub_class_to_cut_out(tax_list, upper_rank, lower_rank):
                     # if diff == 0:
                     #     break
                     if min_sum <= best_sum <= 2000:
+                        finish=True
                         break
+            if finish:
+                break
 
         if min_sum > best_sum:
             min_sum = best_sum
@@ -82,9 +88,9 @@ if __name__ == '__main__':
     x, y, y_species = load_fragments(args.fragments_dir, nr_seqs=args.nr_seqs, balance=not args.unbalanced)
     # parent_dict, scientific_names, common_names, phylo_names, genbank_common_name, scientific_names_inv, common_names_inv = get_dicts()
     classes, weight_classes, species_list_y = get_classes_and_weights_multi_tax(y_species,
-                                                                                tax_ranks=['superkingdom', 'phylum',
-                                                                                           'genus'], unknown_thr=args.num_test_samples+args.num_min_train_samples)
+                                                                                tax_ranks=['superkingdom', 'phylum'], unknown_thr=args.num_test_samples+args.num_min_train_samples)
     # tax_ranks=['superkingdom', 'phylum'])
+
 
     dir = args.out_dir
     # dir = "/home/go96bix/projects/dna_class/resources/"
@@ -128,6 +134,7 @@ if __name__ == '__main__':
         df_train.to_csv(dir + "train.tsv", sep="\t", index=False)
 
     else:
+        # pass
         df = pd.DataFrame(
             {"x": x, "y": y, "tax_id": y_species, "superkingdom": species_list_y[:, 0], "phylum": species_list_y[:, 1]})
         df_test = df.groupby("phylum").sample(n=2000, random_state=1)
@@ -135,3 +142,5 @@ if __name__ == '__main__':
         df_train = df.drop(test_ids)
         df_test.to_csv(dir + "test.tsv", sep="\t", index=False)
         df_train.to_csv(dir + "train.tsv", sep="\t", index=False)
+
+    pickle.dump(classes,open(os.path.join(dir,'classes.pkl'),'wb'))
