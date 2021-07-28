@@ -1,15 +1,12 @@
-#+TITLE: Classification of DNA Sequences
+#+TITLE: BERTax training utilities
 #+OPTIONS: ^:nil
-Library for classifying DNA Sequences using various artificial neural
-network architectures.
-
-The implemented classification criterion is taxonomy, specifically
-at the level of /superkingdoms/.
+This repository contains utilities for pre-training and fine-tuning [[https://github.com/f-kretschmer/bertax][BERTax]] models, as
+well as various utility functions and scripts used in the development of BERTax.
 
 * Modules
 ** =models=
 Contains:
-- declaration of conventional neural network architectures like
+- declaration of "conventional" neural network architectures like
   /Convolutional Neural Networks/ (CNN), /Recurrent Neural Networks/
   (RNN) and /Temporal Convolutional Network/ (TCN):
   [[file:models/model.py]], to be used in conjunction with
@@ -17,7 +14,7 @@ Contains:
 - scripts for pre-training and fine-tuning the [[https://github.com/google-research/bert][BERT (Bidirectional
   Encoder Representations from Transformers)]] neural network
   architecture, divided into versions for both /coding/ and
-  /non-coding/ (genomic) DNA sequences
+  /non-coding/ (genomic; used in [[https://github.com/f-kretschmer/bertax][BERTax]]) DNA sequences
   | mode         | sequences | script                              |
   |--------------+-----------+-------------------------------------|
   | pre-training | coding    | [[file:models/bert_pretrain.py]]    |
@@ -67,7 +64,7 @@ the associated classes:
 [["class_1/sequence1.fa", "class_1/sequence2.fa", ..., "class_n/sequence_l.fa"],
  ["class_1", "class_1", ..., "class_n"]]
 #+end_src
-**** single sequence =json=
+**** single sequences =json= (=genome=, BERTax)
 This mode requires a fixed directory structure with one =json= file
 per class, consisting of a simple list of sequences:
 #+begin_example
@@ -101,22 +98,23 @@ To pre-train BERT (gene) models (Script [[file:models/bert_pretrain.py]]):
 	 --root_fa_dir sequences --from_cache sequences/files.json
 #+end_src
 
-To fine-tune BERT (genomic) models (Script [[file:models/bert_finetune.py]])
+To fine-tune BERT (gene) models (Script [[file:models/bert_finetune.py]])
 #+begin_src shell
   python -m models.bert_finetune bert_gene_C2_trained.h5 --epochs 4 \
 	 --root_fa_dir sequences --from_cache sequences/files.json
 #+end_src
 
 The scripts [[file:models/bert_nc.py]] and [[file:models/bert_nc_finetune.py]] are used
-analogously, with the exception of sequence specification:
+analogously for genomic (BERTax) models, with the exception of input specification:
 
 #+begin_src shell
-  python -m models.bert_nc single_sequence_json_folder/
+  python -m models.bert_nc single_sequences_json_folder/
 #+end_src
 
 #+begin_src shell
-  python -m models.bert_nc_finetune bert_nc_trained.h5 single_sequence_json_folder/
+  python -m models.bert_nc_finetune bert_nc_trained.h5 single_sequences_json_folder/
 #+end_src
+
 ** Using BERT models
 
 A script is available to predict sequences in using a BERT model.
@@ -133,18 +131,10 @@ ACATATATTATATTTT
 python -m utils.test_bert finetuned_bert.h5 --fasta sequences.fa
 #+end_src
 
-The best-performing fine-tuned BERT models ready to use are contained in the
-directory =resources/=.
-
 For this script =--help= provides further usage information.
-** Visualization
 
-To visualize a trained model, use [[file:utils/bertviz_js.py]]:
-#+begin_src sh
-python -m utils.bertviz_js test/random_archaean_fragment.fa resources/bert_nc_C2_final.h5 -a 441 -n 30 --mode head
-#+end_src
-
-Note, that using long sequences (> 150 tokens) puts a heavy burden on memory and performance.
+For many more options the finetuned model can also be used in [[https://github.com/f-kretschmer/bertax][BERTax]] with the parameter
+=--custom_model_file=.
 
 * Dependencies
 - tensorflow >= 2
