@@ -303,12 +303,14 @@ if __name__ == '__main__':
     parser.add_argument('--roc_auc', help=' ', action='store_true')
     parser.add_argument('--multi_tax', help=' ', action='store_true')
     parser.add_argument('--test_benchmark', help=' ', action='store_true')
-
+    parser.add_argument('--tax_ranks', help='taxonomic ranks to train for',
+                        nargs='+', default=["superkingdom", "phylum"])
     args = parser.parse_args()
 
     # tax_ranks = ["superkingdom", "phylum", "genus"]
-    tax_ranks = ["superkingdom", "phylum"]
-    test = False
+    # tax_ranks = ["superkingdom", "phylum"]
+    tax_ranks = args.tax_ranks
+    test = False                # TODO: ?
     norm_weights = True
 
     learning_rate = args.learning_rate
@@ -329,8 +331,8 @@ if __name__ == '__main__':
 
         if args.multi_tax:
             x, y, y_species = load_fragments(args.fragments_dir, balance=False, nr_seqs=args.nr_seqs)
-            f_train_x, f_train_y, f_train_y_species, f_val_x, f_val_y, f_val_y_species, classes, weight_classes, species_list_y,  test_x, test_y, \
-            test_y_species = prepare_training_val_weights_for_multitax(x, y, y_species, unknown_thr=8000,
+            f_train_x, f_train_y, f_train_y_species, f_val_x, f_val_y, f_val_y_species, classes, weight_classes, species_list_y,  f_test_x, f_test_y, \
+            f_test_y_species = prepare_training_val_weights_for_multitax(x, y, y_species, unknown_thr=8000,
                                                                                  gen_test_set=True)
 
         else:
@@ -419,7 +421,7 @@ if __name__ == '__main__':
                     callbacks=callbacks_list, epochs=args.epochs,
                     validation_data=FragmentGenerator_multi_tax(f_val_x, f_val_y, f_val_y_species, weight_classes,
                                                                 seq_len=args.seq_len, tax_ranks=tax_ranks, classes=classes,
-                                                                **generator_args), verbose=2)
+                                                                **generator_args), verbose=1)
             else:
                 model.fit(FragmentGenerator(f_train_x, f_train_y, args.seq_len, **generator_args),
                           callbacks=callbacks_list, epochs=args.epochs,
