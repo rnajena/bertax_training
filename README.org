@@ -115,6 +115,7 @@ analogously for genomic (BERTax) models, with the exception of input specificati
   python -m models.bert_nc_finetune bert_nc_trained.h5 single_sequences_json_folder/
 #+end_src
 
+**** Benchmarking 
 If the user needs a predefined training and test set, for example for benchmarking different approaches:
 
 #+begin_src shell
