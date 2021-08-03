@@ -73,12 +73,12 @@ if __name__ == '__main__':
         description='make dataset for multiple architecture testing')
     parser.add_argument('fragments_dir')
     parser.add_argument('out_dir')
-    parser.add_argument('--nr_seqs', help=' ', type=int, default=None)
-    parser.add_argument('--unbalanced', help=' ', action='store_true')
-    parser.add_argument('--filtered', help=' ', action='store_true')
-    parser.add_argument('--no_unknown', help=' ', action='store_true')
-    parser.add_argument('--num_min_train_samples', help=' ', type=int, default=10000)
+    parser.add_argument('--nr_seqs', help='limit number of sequences per class', type=int, default=None)
+    parser.add_argument('--unbalanced', help='if no limit to the number of seqs is set use --unbalanced', action='store_true')
+    parser.add_argument('--num_min_train_samples', help='minimum number of samples a clade needs to be a valid class', type=int, default=10000)
     parser.add_argument('--num_test_samples', help=' ', type=int, default=2000)
+    parser.add_argument('--non_similar_selection', help='use distinct sets of genera in training and test set', action='store_true')
+    parser.add_argument('--no_unknown', help='don\'t combine multiple classes with low sample count into the class unknown', action='store_true')
 
     tlineage = TaxidLineage()
     args = parser.parse_args()
@@ -86,14 +86,11 @@ if __name__ == '__main__':
     assert args.unbalanced == (args.nr_seqs == None), "either use nr_seqs or unbalanced parameter"
 
     x, y, y_species = load_fragments(args.fragments_dir, nr_seqs=args.nr_seqs, balance=not args.unbalanced)
-    # parent_dict, scientific_names, common_names, phylo_names, genbank_common_name, scientific_names_inv, common_names_inv = get_dicts()
     classes, weight_classes, species_list_y = get_classes_and_weights_multi_tax(y_species,
                                                                                 tax_ranks=['superkingdom', 'phylum'], unknown_thr=args.num_test_samples+args.num_min_train_samples)
-    # tax_ranks=['superkingdom', 'phylum'])
 
 
     dir = args.out_dir
-    # dir = "/home/go96bix/projects/dna_class/resources/"
     assert os.path.isfile(dir)==False, f"{dir} is a file, please set a directory as out_dir"
     if os.path.isdir(dir):
         pass
@@ -107,8 +104,8 @@ if __name__ == '__main__':
         y_species = y_species[mask]
         species_list_y = species_list_y[mask]
 
-    if args.filtered:
-        dir += "filtered/"
+    if args.non_similar_selection:
+        dir += "non_similar_selection/"
         ids_to_filter = choose_sub_class_to_cut_out(y_species, "phylum", "genus")
         ids_to_filter_list = np.unique(np.array([j for i in ids_to_filter.values() for j in i]))
         num_samples_to_draw = min([len(i) for i in ids_to_filter.values()])
