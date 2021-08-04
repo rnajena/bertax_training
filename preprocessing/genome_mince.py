@@ -263,12 +263,14 @@ if __name__ == '__main__':
     parser.add_argument('--thr', '-t', type=float, default=16e9)
     parser.add_argument('--nonalph_cutoff', type=float, default=None)
     parser.add_argument('--no_comp', action='store_true')
+    parser.add_argument('--genome_dir', default='genomes/')
+    parser.add_argument('--sk_order_dict', default='sk_order_dict.json')
     logging.getLogger().setLevel(logging.INFO)
     args = parser.parse_args()
     nr_seqs = args.nr_fragments
     sk = args.sk
     sk_order_dict = json.load(
-        open('/home/lo63tor/Downloads/new_taxdump/sk_order_dict.json'))
+        open(args.sk_order_dict))
 
     def minhash_defined(seq):
         return minhash(seq, 6, 6)
@@ -280,7 +282,7 @@ if __name__ == '__main__':
 
     def sk_fragments_plus_stats(sk, outdir='.', thread_nr=None):
         genome_db = load_genomes(
-            '/home/lo63tor/master/sequences/dna_sequences/genomes', sk, thr=args.thr)
+            args.genome_dir, sk, thr=args.thr)
         if (args.no_comp):
             global counter
             counter = 0
