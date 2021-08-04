@@ -10,7 +10,7 @@ Contains:
   /Convolutional Neural Networks/ (CNN), /Recurrent Neural Networks/
   (RNN) and /Temporal Convolutional Network/ (TCN):
   [[file:models/model.py]], to be used in conjunction with
-  [[file:utils/test_model.py]]
+  [[file:utils/test_model.py]] (used for comparison in the development of BERTax)
 - scripts for pre-training and fine-tuning the [[https://github.com/google-research/bert][BERT (Bidirectional
   Encoder Representations from Transformers)]] neural network
   architecture, divided into versions for both /coding/ and
@@ -105,17 +105,23 @@ To fine-tune BERT (gene) models (Script [[file:models/bert_finetune.py]])
 #+end_src
 
 The scripts [[file:models/bert_nc.py]] and [[file:models/bert_nc_finetune.py]] are used
-analogously for genomic (BERTax) models, with the exception of input specification:
+analogously for genomic (BERTax) models, with the exception of input specification.
 
+For example, the BERTax model was pre-trained with:
 #+begin_src shell
-  python -m models.bert_nc single_sequences_json_folder/
+  python -m models.bert_nc single_sequences_json_folder --batch_size 32 --head_num 5 \
+         --transformer_num 12 --embed_dim 250 --feed_forward_dim 1024 --dropout_rate 0.05 \
+         --name bert_nc_C2 --epochs 10
 #+end_src
 
+and fine-tuned with:
 #+begin_src shell
-  python -m models.bert_nc_finetune bert_nc_trained.h5 single_sequences_json_folder/
+  python -m models.bert_nc_finetune bert_nc_C2.h5 single_sequences_json_folder/ --multi_tax \
+         --epochs 15 --batch_size 24 --save_name _small_trainingset_filtered_fix_classes_selection \
+         --store_predictions --nr_seqs 1000000000
 #+end_src
 
-**** Benchmarking 
+**** Benchmarking
 If the user needs a predefined training and test set, for example for benchmarking different approaches:
 
 #+begin_src shell
