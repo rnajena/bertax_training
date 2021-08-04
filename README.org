@@ -75,7 +75,7 @@ and fine-tuned with:
          --store_predictions --nr_seqs 1000000000
 #+end_src
 
-The development gene models can be pre-trained with file:models/bert_pretrain.py:
+The development gene models can be pre-trained with [[file:models/bert_pretrain.py]]:
 #+begin_src shell
   python -m models.bert_pretrain bert_gene_C2 --epochs 10 --batch_size 32 --seq_len 502 \
 	 --head_num 5 --embed_dim 250 --feed_forward_dim 1024 --dropout_rate 0.05 \
@@ -119,9 +119,9 @@ If fasta files are necessary, e.g., for competing methods, you can parse the tra
 #+end_src
 
 * Additional scripts
-- file:preprocessing/fasta2fragments.py / file:preprocessing/fragments2fasta.py :: convert
+- [[file:preprocessing/fasta2fragments.py]] / [[file:preprocessing/fragments2fasta.py]] :: convert
   between multi-fasta and json training files
-- file:preprocessing/genome_db.py, file:preprocessing/genome_mince.py :: scripts used to
+- [[file:preprocessing/genome_db.py]], [[file:preprocessing/genome_mince.py]] :: scripts used to
   generate genomic fragments for training
 
 * Dependencies
