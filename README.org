@@ -3,45 +3,38 @@
 This repository contains utilities for pre-training and fine-tuning [[https://github.com/f-kretschmer/bertax][BERTax]] models, as
 well as various utility functions and scripts used in the development of BERTax.
 
-* Modules
-** =models=
-Contains:
-- declaration of "conventional" neural network architectures like
-  /Convolutional Neural Networks/ (CNN), /Recurrent Neural Networks/
-  (RNN) and /Temporal Convolutional Network/ (TCN):
-  [[file:models/model.py]], to be used in conjunction with
-  [[file:utils/test_model.py]] (used for comparison in the development of BERTax)
-- scripts for pre-training and fine-tuning the [[https://github.com/google-research/bert][BERT (Bidirectional
-  Encoder Representations from Transformers)]] neural network
-  architecture, divided into versions for both /coding/ and
-  /non-coding/ (genomic; used in [[https://github.com/f-kretschmer/bertax][BERTax]]) DNA sequences
-  | mode         | sequences | script                              |
-  |--------------+-----------+-------------------------------------|
-  | pre-training | coding    | [[file:models/bert_pretrain.py]]    |
-  | pre-training | genomic   | [[file:models/bert_nc.py]]          |
-  | fine-tuning  | coding    | [[file:models/bert_finetune.py]]    |
-  | fine-tuning  | genomic   | [[file:models/bert_nc_finetune.py]] |
+Additionally to the [[https://doi.org/10.1101/2021.07.09.451778][described mode of training BERTax on /genomic/ DNA sequences]],
+development scripts for training on /gene/ sequences are included as well.
 
-** =preprocessing=
-Utilities for sequence input, encoding and model input generation:
-- [[file:preprocessing/process_inputs.py]] :: functions for reading in
-  and encoding sequences
-- [[file:preprocessing/generate_data.py]] :: Generator classes for
-  storing and retrieving training / validation / testing data
-** =utils=
-Contains the CLI program for training/testing conventional neural network
-architectures (CNN/RNN/TCN), [[file:utils/test_model.py]], as well as
-a CLI program to apply/test fine-tuned BERT models, for example with
-=fasta= sequences, [[file:utils/test_bert.py]]
-* Usage
-** Training models
-*** Data preparation
-Two modes exist for preparing raw DNA sequences for training
-**** Individual sequence fastas (=gene=)
+* Training new BERTax models
+** Data preparation
+*** fragments directories
+
+For training the normal, genomic DNA-based models, a fixed directory structure with one =json= file
+per class, consisting of a simple list of sequences is required:
+#+begin_example
+[class_1]/
+  [class_1]_fragments.json
+[class_2]/
+  [class_2]_fragments.json
+.../
+[class_n]/
+  [class_n]_fragments.json
+#+end_example
+
+Example fragments file:
+#+begin_src json
+["ACGTACGTACGATCGA", "TACACTTTTTA", ..., "ATACTATCTATCTA"]
+#+end_src
+*** gene model training directories
+
+The gene models were used in an early stage of BERTax development, where a different
+directory structure was required:
+
 Each sequence is contained in a fasta file, additionally, a =json=
 file containg all file-names and associated classes can speed up
-preprocessing tremendously. A fixed directory structure is
-requiered:
+preprocessing tremendously.
+
 #+begin_example
 [class_1]/
   [sequence_1.fa]
@@ -64,64 +57,51 @@ the associated classes:
 [["class_1/sequence1.fa", "class_1/sequence2.fa", ..., "class_n/sequence_l.fa"],
  ["class_1", "class_1", ..., "class_n"]]
 #+end_src
-**** single sequences =json= (=genome=, BERTax)
-This mode requires a fixed directory structure with one =json= file
-per class, consisting of a simple list of sequences:
-#+begin_example
-[class_1]/
-  [class_1]_fragments.json
-[class_2]/
-  [class_2]_fragments.json
-.../
-[class_n]/
-  [class_n]_fragments.json
-#+end_example
-
-Example fragments file:
-#+begin_src json
-["ACGTACGTACGATCGA", "TACACTTTTTA", ..., "ATACTATCTATCTA"]
-#+end_src
-*** Training and testing models
-All Scripts described here are implemented as CLIs; detailed usage
-information can be optained via the =--help= flag.
-
-For RNN, CNN and TCN models, the script [[file:utils/test_model.py]] is used:
-#+begin_src shell
-  python utils/test_model.py tcn --nr_seqs 10_000 --summary \
-	 --root_fa_dir sequences --file_names_cache sequences/files.json
-#+end_src
-
-To pre-train BERT (gene) models (Script [[file:models/bert_pretrain.py]]):
-#+begin_src shell
-  python -m models.bert_pretrain bert_gene_C2 --epochs 10 --batch_size 32 --seq_len 502 \
-	 --head_num 5 --embed_dim 250 --feed_forward_dim 1024 --dropout_rate 0.05 \
-	 --root_fa_dir sequences --from_cache sequences/files.json
-#+end_src
-
-To fine-tune BERT (gene) models (Script [[file:models/bert_finetune.py]])
-#+begin_src shell
-  python -m models.bert_finetune bert_gene_C2_trained.h5 --epochs 4 \
-	 --root_fa_dir sequences --from_cache sequences/files.json
-#+end_src
-
-The scripts [[file:models/bert_nc.py]] and [[file:models/bert_nc_finetune.py]] are used
-analogously for genomic (BERTax) models, with the exception of input specification.
+** Training process
+The normal, genomic DNA-based model can be pre-trained with [[file:models/bert_nc.py]] and
+fine-tuned with [[file:models/bert_nc_finetune.py]].
 
 For example, the BERTax model was pre-trained with:
 #+begin_src shell
-  python -m models.bert_nc single_sequences_json_folder --batch_size 32 --head_num 5 \
+  python -m models.bert_nc fragments_root_dir --batch_size 32 --head_num 5 \
          --transformer_num 12 --embed_dim 250 --feed_forward_dim 1024 --dropout_rate 0.05 \
          --name bert_nc_C2 --epochs 10
 #+end_src
 
 and fine-tuned with:
 #+begin_src shell
-  python -m models.bert_nc_finetune bert_nc_C2.h5 single_sequences_json_folder/ --multi_tax \
+  python -m models.bert_nc_finetune bert_nc_C2.h5 fragments_root_dir --multi_tax \
          --epochs 15 --batch_size 24 --save_name _small_trainingset_filtered_fix_classes_selection \
          --store_predictions --nr_seqs 1000000000
 #+end_src
 
-**** Benchmarking
+The development gene models can be pre-trained with file:models/bert_pretrain.py:
+#+begin_src shell
+  python -m models.bert_pretrain bert_gene_C2 --epochs 10 --batch_size 32 --seq_len 502 \
+	 --head_num 5 --embed_dim 250 --feed_forward_dim 1024 --dropout_rate 0.05 \
+	 --root_fa_dir sequences --from_cache sequences/files.json
+#+end_src
+
+and fine-tuned with [[file:models/bert_finetune.py]]:
+#+begin_src shell
+  python -m models.bert_finetune bert_gene_C2_trained.h5 --epochs 4 \
+	 --root_fa_dir sequences --from_cache sequences/files.json
+#+end_src
+
+All training scripts can be called with the =--help= flag to adjust various parameters.
+
+** Using BERT models
+
+It is recommended to use fine-tuned models in the BERTax tool with the parameter
+=--custom_model_file=.
+
+However, a much more minimal script to predict multi-fasta sequences with the trained
+model is also available in this repository:
+
+#+begin_src shell
+python -m utils.test_bert finetuned_bert.h5 --fasta sequences.fa
+#+end_src
+** Benchmarking
 If the user needs a predefined training and test set, for example for benchmarking different approaches:
 
 #+begin_src shell
@@ -138,27 +118,11 @@ If fasta files are necessary, e.g., for competing methods, you can parse the tra
   python -m preprocessing.dataset2fasta make_dataset_out_folder/
 #+end_src
 
-
-** Using BERT models
-
-A script is available to predict sequences in using a BERT model.
-For example, sequences contained in a fasta file can be predicted:
-
-#+begin_src fasta
-> class_1
-ACGTAGCTA
-> class_2
-ACATATATTATATTTT
-#+end_src
-
-#+begin_src shell
-python -m utils.test_bert finetuned_bert.h5 --fasta sequences.fa
-#+end_src
-
-For this script =--help= provides further usage information.
-
-For many more options the finetuned model can also be used in [[https://github.com/f-kretschmer/bertax][BERTax]] with the parameter
-=--custom_model_file=.
+* Additional scripts
+- file:preprocessing/fasta2fragments.py / file:preprocessing/fragments2fasta.py :: convert
+  between multi-fasta and json training files
+- file:preprocessing/genome_db.py, file:preprocessing/genome_mince.py :: scripts used to
+  generate genomic fragments for training
 
 * Dependencies
 - tensorflow >= 2
@@ -167,9 +131,4 @@ For many more options the finetuned model can also be used in [[https://github.c
 - tqdm
 - scikit-learn
 - keras-bert
-- keras-tcn
-
-** Visualization
-- torch
-- transformers
-- bio
+- biopython
