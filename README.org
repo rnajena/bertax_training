@@ -8,6 +8,8 @@ development scripts for training on /gene/ sequences are included as well.
 
 * Training new BERTax models
 ** Data preparation
+For the training of a new BERTax model the user must provide one of the two following data-structures.
+
 *** fragments directories
 
 For training the normal, genomic DNA-based models, a fixed directory structure with one =json= file
