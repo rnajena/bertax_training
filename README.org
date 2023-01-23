@@ -44,14 +44,11 @@ After generating these files you can transform them for training.
 For training the normal, genomic DNA-based models, a fixed directory structure with one =json= file and one =txt= file
 per classis required:
 #+begin_example
-[class_1]/
   [class_1]_fragments.json
   [class_1]_species_picked.txt
-[class_2]/
   [class_2]_fragments.json
   [class_2]_species_picked.txt
-.../
-[class_n]/
+  ...
   [class_n]_fragments.json
   [class_n]_species_picked.txt
 #+end_example
