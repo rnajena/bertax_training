@@ -1,6 +1,6 @@
 #+TITLE: BERTax training utilities
 #+OPTIONS: ^:nil
-This repository contains utilities for pre-training and fine-tuning [[https://github.com/f-kretschmer/bertax][BERTax]] models, as
+This repository contains utilities for pre-training and fine-tuning [[https://github.com/rnajena/bertax][BERTax]] models, as
 well as various utility functions and scripts used in the development of BERTax.
 
 Additionally to the [[https://doi.org/10.1101/2021.07.09.451778][described mode of training BERTax on /genomic/ DNA sequences]],
@@ -21,7 +21,7 @@ For training any model you can use multi fastas which should contain the sequenc
 [class_n].fa
 #+end_example
 
-The =fasta= files contain headers, which consist of a sequences associated species' TaxID and a concurrent index. 
+The =fasta= files contain headers, which consist of a sequences associated species' TaxID and a concurrent index.
 
 Example fasta file (you can find our pretraining fasta files [[https://osf.io/qg6mv/files/osfstorage/60faa9f84d949102092323b4][here]]):
 #+begin_example
@@ -33,9 +33,9 @@ GCAGACGAGTTCACCACTGCTGCAGGAAAAGAT
 AACTATGCATAGGGCCTTTGCCGGCACTAT
 #+end_example
 
-After generating these files you can transform them for training. 
+After generating these files you can transform them for training.
 - [[file:preprocessing/fasta2fragments.py]] / [[file:preprocessing/fragments2fasta.py]] :: convert
-  between multi-fasta and json training files 
+  between multi-fasta and json training files
 - [[file:preprocessing/genome_db.py]], [[file:preprocessing/genome_mince.py]] :: For splitting whole genomes into smaller fragments
 
 
@@ -55,14 +55,14 @@ per classis required:
 
 The =json= files must consist of a simple list of sequences.
 Example json file:
-#+begin_src 
+#+begin_src
 ["ACGTACGTACGATCGA", "TACACTTTTTA", ..., "ATACTATCTATCTA"]
 #+end_src
 
 The =txt= files are a ordered lists of the corresponding TaxIDs, meaning the first listed TaxID describes the taxonomical origin of the first sequence in the json file with the same prefix.
 
 Example txt file:
-#+begin_src 
+#+begin_src
 380669
 264076
 218387
